@@ -11,7 +11,6 @@ import {
   Typography,
   Switch,
   FormControlLabel,
-  Collapse,
   Snackbar,
   FormControl,
   InputLabel
@@ -106,7 +105,6 @@ const AdversaGuardUI = () => {
   const [selectedImage, setSelectedImage] = useState(null);
   const [adversarialImage, setAdversarialImage] = useState(null);
   const [method, setMethod] = useState('fgsm');
-  const [showAdvanced, setShowAdvanced] = useState(false);
   const [stealthMode, setStealthMode] = useState(false);
   const [params, setParams] = useState(methodConfigs.fgsm.defaults);
   const [error, setError] = useState(null);
@@ -157,47 +155,89 @@ const AdversaGuardUI = () => {
     }
   };
 
-  const generateAdversarial = async () => {
-    if (!selectedImage) {
-      setError("Please upload an image first.");
-      return;
+const generateAdversarial = async () => {
+  if (!selectedImage) {
+    setError("Please upload an image first.");
+    return;
+  }
+
+  setIsLoading(true);
+  const formData = new FormData();
+
+  try {
+    const imageFile = await fetch(selectedImage).then(r => r.blob());
+    formData.append('file', imageFile, 'image.jpg');
+    formData.append('method', method);
+    formData.append('stealth_mode', stealthMode.toString());
+    formData.append('image_type', imageType === 'auto' ? 'detect' : imageType);
+
+    // Method-specific parameter handling
+    switch (method) {
+      case 'fgsm':
+        formData.append('epsilon', params.epsilon.toString());
+        break;
+
+      case 'pgd':
+        formData.append('epsilon', params.epsilon.toString());
+        formData.append('alpha', params.alpha.toString());
+        formData.append('num_iter', params.num_iter.toString());
+        break;
+
+      case 'deepfool':
+        formData.append('num_classes', params.num_classes.toString());
+        formData.append('overshoot', params.overshoot.toString());
+        formData.append('max_iter', params.max_iter.toString());
+        // Add required default parameters
+        formData.append('epsilon', '0.03'); // Default epsilon for stability
+        break;
+
+      case 'one_pixel':
+        formData.append('pixels', params.pixels.toString());
+        formData.append('max_iter', params.max_iter.toString());
+        formData.append('pop_size', params.pop_size.toString());
+        // Add required default parameters
+        formData.append('epsilon', '0.03'); // Default epsilon for stability
+        break;
+
+      case 'universal':
+        formData.append('epsilon', params.epsilon.toString());
+        formData.append('delta', params.delta.toString());
+        formData.append('max_iter_uni', params.max_iter_uni.toString());
+        formData.append('num_classes', params.num_classes.toString());
+        break;
+
+      default:
+        throw new Error(`Unknown attack method: ${method}`);
     }
 
-    setIsLoading(true);
-    const formData = new FormData();
-    try {
-      const imageFile = await fetch(selectedImage).then(r => r.blob());
-      formData.append('file', imageFile, 'image.jpg');
-      formData.append('method', method);
-      formData.append('stealth_mode', stealthMode);
-      formData.append('image_type', imageType === 'auto' ? 'detect' : imageType);
+    // Log request parameters for debugging
+    const formDataObj = {};
+    formData.forEach((value, key) => {
+      formDataObj[key] = value;
+    });
+    console.log('Sending request with params:', formDataObj);
 
-      // Only append relevant parameters for the selected method
-      const relevantParams = methodConfigs[method].params;
-      relevantParams.forEach(param => {
-        formData.append(param, params[param]);
-      });
+    const response = await fetch('http://127.0.0.1:8000/generate_adversarial', {
+      method: 'POST',
+      body: formData,
+    });
 
-      const response = await fetch('http://127.0.0.1:8000/generate_adversarial', {
-        method: 'POST',
-        body: formData,
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
-      }
-
-      const data = await response.json();
-      setAdversarialImage(`data:image/png;base64,${data.adversarial_image}`);
-      setOriginalPrediction(data.original_prediction);
-      setAdversarialPrediction(data.adversarial_prediction);
-    } catch (e) {
-      setError(`Failed to generate adversarial image. Error: ${e.message}`);
-    } finally {
-      setIsLoading(false);
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
     }
-  };
+
+    const data = await response.json();
+    setAdversarialImage(`data:image/png;base64,${data.adversarial_image}`);
+    setOriginalPrediction(data.original_prediction);
+    setAdversarialPrediction(data.adversarial_prediction);
+  } catch (e) {
+    console.error('Error details:', e);
+    setError(`Failed to generate adversarial image. Error: ${e.message}`);
+  } finally {
+    setIsLoading(false);
+  }
+};
 
   return (
     <ThemeProvider theme={theme}>
@@ -303,6 +343,11 @@ const AdversaGuardUI = () => {
                     onChange={handleParamChange}
                     fullWidth
                     margin="normal"
+                    inputProps={{
+                      step: param.includes('iter') || param === 'pixels' || param === 'pop_size' || param === 'num_classes' ? 1 : 0.01,
+                      min: 0,
+                      max: param === 'epsilon' || param === 'delta' ? 1 : undefined
+                    }}
                   />
                 ))}
 
@@ -320,7 +365,12 @@ const AdversaGuardUI = () => {
             </Card>
           </Grid>
         </Grid>
-        <Snackbar open={!!error} autoHideDuration={6000} onClose={() => setError(null)}>
+        <Snackbar
+          open={!!error}
+          autoHideDuration={6000}
+          onClose={() => setError(null)}
+          anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+        >
           <MuiAlert elevation={6} variant="filled" severity="error" onClose={() => setError(null)}>
             {error}
           </MuiAlert>

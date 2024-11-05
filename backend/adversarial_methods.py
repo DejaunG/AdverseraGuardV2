@@ -35,15 +35,20 @@ def pgd_attack(model, image, label, epsilon=0.03, alpha=0.005, num_iter=40):
 
 
 def deepfool_attack(model, image, num_classes, overshoot=0.02, max_iter=50):
-    """Fixed DeepFool attack"""
-    image = image.detach().clone()
-    perturbed_image = image.detach().clone()
-    perturbed_image.requires_grad = True
+    """
+    Improved DeepFool implementation with better tensor handling and error prevention
+    """
+    image = image.clone().detach()
+    image.requires_grad_(True)
 
-    output = model(perturbed_image)
-    original_pred = output.max(1)[1].item()
+    # Get original prediction
+    with torch.no_grad():
+        output = model(image)
+        original_pred = output.max(1)[1].item()
 
-    for _ in range(max_iter):
+    perturbed_image = image.clone()
+
+    for i in range(max_iter):
         if perturbed_image.grad is not None:
             perturbed_image.grad.zero_()
 
@@ -54,85 +59,167 @@ def deepfool_attack(model, image, num_classes, overshoot=0.02, max_iter=50):
         min_distance = float('inf')
         closest_perturbation = None
 
-        for k in indices[1:num_classes]:
-            # Zero gradients
-            if perturbed_image.grad is not None:
-                perturbed_image.grad.zero_()
+        # Check against top k classes
+        k = min(num_classes, len(indices))
+        for idx in range(1, k):  # Start from 1 to skip the original class
+            target_class = indices[idx]
 
-            # Compute loss for current class
-            loss = output[0, k] - output[0, original_pred]
-            loss.backward(retain_graph=True)
+            # Calculate loss for this target class
+            loss = output[0, target_class] - output[0, original_pred]
+            grad = torch.autograd.grad(loss, perturbed_image,
+                                       retain_graph=True)[0]
 
-            # Get current gradient
-            current_grad = perturbed_image.grad.clone()
-
-            # Compute distance to decision boundary
-            w_norm = current_grad.norm().item()
-            if w_norm == 0:
+            # Normalize gradient
+            grad_norm = grad.norm().item()
+            if grad_norm == 0:
                 continue
-            distance = abs(loss.item()) / w_norm
 
-            # Update if this is the closest hyperplane
+            # Calculate distance to decision boundary
+            distance = abs(loss.item()) / grad_norm
+
+            # Update if this is the closest boundary
             if distance < min_distance:
                 min_distance = distance
-                closest_perturbation = current_grad * (distance / w_norm)
+                closest_perturbation = grad * distance / grad_norm
 
         if closest_perturbation is None:
             break
 
         # Apply perturbation
         with torch.no_grad():
-            perturbed_image += (1 + overshoot) * closest_perturbation
+            perturbed_image = perturbed_image + (1 + overshoot) * closest_perturbation
             perturbed_image = torch.clamp(perturbed_image, 0, 1)
 
-        perturbed_image.requires_grad = True
-
-        # Check if prediction changed
-        output = model(perturbed_image)
-        if output.max(1)[1].item() != original_pred:
-            break
+        # Check if prediction has changed
+        with torch.no_grad():
+            new_pred = model(perturbed_image).max(1)[1].item()
+            if new_pred != original_pred:
+                break
 
     return perturbed_image.detach()
 
 
 def one_pixel_attack(model, image, label, pixels=1, max_iter=100, pop_size=400):
-    """Fixed One Pixel attack"""
-    c, h, w = image.squeeze().shape
+    """
+    Optimized One Pixel attack with progress tracking and parallel processing
+    """
+    try:
+        from tqdm.auto import tqdm
+        import time
+        from concurrent.futures import ThreadPoolExecutor, as_completed
 
-    def perturb_image(xs):
-        xs = np.array(xs).reshape(-1, pixels * 5)
-        batch = len(xs)
-        images = image.repeat(batch, 1, 1, 1)
+        image = image.squeeze(0)  # Remove batch dimension
+        c, h, w = image.shape
 
-        for i in range(batch):
-            for p in range(pixels):
-                x_pos = int(xs[i, p * 5])
-                y_pos = int(xs[i, p * 5 + 1])
-                for c_idx in range(3):
-                    images[i, c_idx, x_pos, y_pos] = xs[i, p * 5 + 2 + c_idx]
+        # Cache for storing prediction results
+        prediction_cache = {}
 
-        return images
+        def perturb_image(xs, batch=True):
+            """Optimized perturbation with batching"""
+            if not isinstance(xs, np.ndarray):
+                xs = np.array([xs])
 
-    def predict_classes(xs):
-        imgs = perturb_image(xs)
-        with torch.no_grad():
-            output = model(imgs)
-        return output.argmax(1).cpu().numpy()
+            cache_key = tuple(xs.flatten())
+            if cache_key in prediction_cache:
+                return prediction_cache[cache_key]
 
-    def attack_success(x):
-        pred = predict_classes(x)
-        return (pred != label.item()).any()
+            batch_size = len(xs)
+            perturbed = image.unsqueeze(0).repeat(batch_size, 1, 1, 1)
+            perturbed_np = perturbed.numpy()
 
-    bounds = [(0, h - 1), (0, w - 1), (0, 1), (0, 1), (0, 1)] * pixels
+            # Vectorized operations for better performance
+            for idx in range(batch_size):
+                pixel_indices = np.arange(pixels) * 5
+                x_positions = xs[idx, pixel_indices].astype(int)
+                y_positions = xs[idx, pixel_indices + 1].astype(int)
+                rgb_values = xs[idx, pixel_indices[:, None] + np.arange(2, 5)]
 
-    result = differential_evolution(
-        attack_success, bounds, maxiter=max_iter, popsize=pop_size,
-        mutation=(0.5, 1), recombination=0.7
-    )
+                for p in range(pixels):
+                    perturbed_np[idx, :, x_positions[p], y_positions[p]] = rgb_values[p]
 
-    if result.success:
-        return perturb_image(result.x)[0]
-    return image
+            result = torch.from_numpy(perturbed_np).float()
+            if not batch:
+                prediction_cache[cache_key] = result
+            return result
+
+        def predict_batch(xs):
+            """Batch prediction for better performance"""
+            try:
+                with torch.no_grad():
+                    imgs = perturb_image(xs)
+                    outputs = model(imgs)
+                    predictions = outputs.argmax(1)
+                return predictions.cpu().numpy()
+            except Exception as e:
+                logger.error(f"Batch prediction error: {str(e)}")
+                return np.array([label.item()] * len(xs))
+
+        def attack_success(x):
+            """Optimized evaluation function"""
+            try:
+                x_reshaped = x.reshape(1, -1)
+                predictions = predict_batch(x_reshaped)
+                return float(predictions[0] != label.item())
+            except Exception as e:
+                logger.error(f"Attack evaluation error: {str(e)}")
+                return 0.0
+
+        # Define bounds for pixel locations and values
+        bounds = [(0, h - 1), (0, w - 1), (0, 1), (0, 1), (0, 1)] * pixels
+
+        # Calculate estimated time per iteration based on a small sample
+        start_time = time.time()
+        sample_size = min(5, pop_size)
+        sample_population = np.random.rand(sample_size, len(bounds))
+        for x in sample_population:
+            attack_success(x)
+        time_per_iter = (time.time() - start_time) / sample_size
+        estimated_total_time = time_per_iter * pop_size * max_iter
+
+        # Progress bar setup
+        pbar = tqdm(total=max_iter,
+                    desc="One Pixel Attack Progress",
+                    bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} "
+                               "[{elapsed}<{remaining}, {rate_fmt}{postfix}]")
+
+        def callback(xk, convergence=None):
+            """Callback function to update progress bar"""
+            pbar.update(1)
+            current_success = attack_success(xk)
+            pbar.set_postfix({"Best Score": f"{current_success:.3f}"})
+            return False
+
+        try:
+            # Run differential evolution with progress tracking
+            result = differential_evolution(
+                attack_success,
+                bounds,
+                maxiter=max_iter,
+                popsize=pop_size,
+                mutation=(0.5, 1),
+                recombination=0.7,
+                workers=1,
+                updating='immediate',
+                callback=callback,
+                init='random',
+                polish=False  # Disable polish step for speed
+            )
+
+            if result.success:
+                perturbed = perturb_image(result.x.reshape(1, -1), batch=False)
+                pbar.close()
+                return perturbed
+
+            logger.warning("One pixel attack did not converge")
+            pbar.close()
+            return image.unsqueeze(0)
+
+        finally:
+            pbar.close()
+
+    except Exception as e:
+        logger.error(f"One pixel attack failed: {str(e)}")
+        return image.unsqueeze(0)
 
 
 def universal_adversarial_perturbation(model, image, epsilon=0.1, delta=0.2, max_iter_uni=50, num_classes=1000):
