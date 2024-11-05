@@ -1,20 +1,19 @@
 import React from 'react';
-import { Box, Typography, Grid } from '@mui/material';
+import { Box, Typography, Paper } from '@mui/material';
+import { Science } from '@mui/icons-material';
 
-function Results({ originalResult, advResult }) {
+function Results({ result }) {
   return (
     <Box textAlign="center" my={4}>
-      <Typography variant="h5" gutterBottom>Classification Results:</Typography>
-      <Grid container spacing={2} justifyContent="center">
-        <Grid item xs={12} sm={6}>
-          <Typography variant="h6">Original Image:</Typography>
-          <Typography variant="body1">{originalResult}</Typography>
-        </Grid>
-        <Grid item xs={12} sm={6}>
-          <Typography variant="h6">Adversarial Image:</Typography>
-          <Typography variant="body1">{advResult}</Typography>
-        </Grid>
-      </Grid>
+      <Paper elevation={3} sx={{ p: 3, backgroundColor: 'background.paper', maxWidth: '500px', margin: 'auto' }}>
+        <Typography variant="h5" gutterBottom color="primary">
+          <Science sx={{ verticalAlign: 'middle', mr: 1 }} />
+          Classification Result
+        </Typography>
+        <Typography variant="h6" color="text.primary">
+          {result}
+        </Typography>
+      </Paper>
     </Box>
   );
 }
