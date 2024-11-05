@@ -39,25 +39,26 @@ const theme = createTheme({
 });
 
 const methodDescriptions = {
-  fgsm: "Fast Gradient Sign Method (FGSM) - Creates adversarial examples by perturbing the input in the direction that maximizes the loss",
-  pgd: "Projected Gradient Descent (PGD) - An iterative version of FGSM that creates stronger adversarial examples by taking multiple smaller steps",
-  universal: "Universal Adversarial Perturbation - Generates a single perturbation pattern that can fool the model across multiple inputs",
-  deepfool: "DeepFool - Efficiently computes the minimal perturbation needed to cross the decision boundary",
-  one_pixel: "One Pixel Attack - Modifies only a limited number of pixels to fool the classifier"
+  fgsm: "A quick and simple attack that slightly modifies the entire image in a single step. Good for testing basic model vulnerabilities. Fast but may be less effective.",
+  pgd: "A stronger attack that gradually modifies the image over multiple steps. More likely to fool the model than FGSM but takes longer to run. Best for thorough testing.",
+  universal: "Creates a pattern that can fool the model when applied to many different images. Useful for testing overall model security. Takes longer but works on multiple images.",
+  deepfool: "Finds the smallest changes needed to fool the model. Good for understanding model weaknesses with minimal image changes.",
+  one_pixel: "Changes only a few pixels to fool the model. Shows how sensitive the model can be to tiny changes."
 };
 
 const parameterDescriptions = {
-  epsilon: "Maximum perturbation size allowed (larger values create more noticeable changes)",
-  alpha: "Step size for each iteration (smaller values create more refined perturbations)",
-  num_iter: "Number of iterations to run the attack",
-  num_classes: "Number of classes to consider when generating the adversarial example",
-  overshoot: "How far to push beyond the decision boundary",
-  max_iter: "Maximum number of iterations before stopping",
-  pixels: "Number of pixels to modify in the attack",
-  pop_size: "Size of the population for evolutionary optimization",
-  delta: "Target fooling rate threshold",
-  max_iter_uni: "Maximum iterations for universal perturbation generation"
+  epsilon: "How much the image can be changed overall. Higher values (like 0.1) make more visible changes but are more likely to work. Lower values (like 0.01) make subtle changes but might be less effective.",
+  alpha: "Size of each change step. Smaller values make more precise changes but take longer. Like walking with smaller steps to reach a destination more accurately.",
+  num_iter: "Number of attempts to modify the image. More attempts usually give better results but take longer. Start with 40-50 and increase if needed.",
+  num_classes: "How many different types of classifications to consider. Higher numbers are more thorough but slower.",
+  overshoot: "How aggressive the attack should be. Higher values make stronger attacks but more visible changes.",
+  max_iter: "Maximum number of tries before stopping. Increase this if the attack isn't successful enough.",
+  pixels: "Number of pixels to change. More pixels = stronger attack but more visible changes.",
+  pop_size: "Number of different variations to try. Larger numbers give better results but take longer.",
+  delta: "How often the attack should successfully fool the model (0-1). Higher values make stronger but more visible attacks.",
+  max_iter_uni: "How many times to try improving the attack. More attempts = better results but longer runtime."
 };
+
 
 const methodConfigs = {
   fgsm: {
@@ -323,11 +324,11 @@ const AdversaGuardUI = () => {
                     label="Attack Method"
                   >
                     <MenuItem value="fgsm">
-                      FGSM (Fast Gradient Sign Method)
+                      Fast Gradient Sign Method (FGSM)
                       <InfoTooltip title={methodDescriptions.fgsm} />
                     </MenuItem>
                     <MenuItem value="pgd">
-                      PGD (Projected Gradient Descent)
+                      Projected Gradient Descent (PGD)
                       <InfoTooltip title={methodDescriptions.pgd} />
                     </MenuItem>
                     <MenuItem value="universal">
@@ -360,7 +361,7 @@ const AdversaGuardUI = () => {
                   label={
                     <div style={{ display: 'flex', alignItems: 'center' }}>
                       Stealth Mode
-                      <InfoTooltip title="Attempts to make adversarial perturbations less detectable to human observers" />
+                      <InfoTooltip title="When turned on, tries to make changes to the image that are harder for humans to notice." />
                     </div>
                   }
                 />
