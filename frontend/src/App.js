@@ -36,35 +36,95 @@ const theme = createTheme({
   },
 });
 
+const methodConfigs = {
+  fgsm: {
+    params: ['epsilon'],
+    defaults: {
+      epsilon: 0.03
+    },
+    labels: {
+      epsilon: 'Perturbation Size (ε)'
+    }
+  },
+  pgd: {
+    params: ['epsilon', 'alpha', 'num_iter'],
+    defaults: {
+      epsilon: 0.03,
+      alpha: 0.01,
+      num_iter: 40
+    },
+    labels: {
+      epsilon: 'Perturbation Size (ε)',
+      alpha: 'Step Size (α)',
+      num_iter: 'Number of Iterations'
+    }
+  },
+  deepfool: {
+    params: ['num_classes', 'overshoot', 'max_iter'],
+    defaults: {
+      num_classes: 1000,
+      overshoot: 0.02,
+      max_iter: 50
+    },
+    labels: {
+      num_classes: 'Number of Classes',
+      overshoot: 'Overshoot Parameter',
+      max_iter: 'Maximum Iterations'
+    }
+  },
+  one_pixel: {
+    params: ['pixels', 'max_iter', 'pop_size'],
+    defaults: {
+      pixels: 1,
+      max_iter: 100,
+      pop_size: 400
+    },
+    labels: {
+      pixels: 'Number of Pixels to Modify',
+      max_iter: 'Maximum Iterations',
+      pop_size: 'Population Size'
+    }
+  },
+  universal: {
+    params: ['epsilon', 'delta', 'max_iter_uni', 'num_classes'],
+    defaults: {
+      epsilon: 0.1,
+      delta: 0.2,
+      max_iter_uni: 50,
+      num_classes: 1000
+    },
+    labels: {
+      epsilon: 'Perturbation Size (ε)',
+      delta: 'Fooling Rate Threshold (δ)',
+      max_iter_uni: 'Maximum Iterations',
+      num_classes: 'Number of Classes'
+    }
+  }
+};
+
 const AdversaGuardUI = () => {
   const [selectedImage, setSelectedImage] = useState(null);
   const [adversarialImage, setAdversarialImage] = useState(null);
   const [method, setMethod] = useState('fgsm');
-  const [epsilon, setEpsilon] = useState(0.03);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [stealthMode, setStealthMode] = useState(false);
-  const [params, setParams] = useState({
-    alpha: 0.01,
-    num_iter: 40,
-    num_classes: 1000,
-    overshoot: 0.02,
-    max_iter: 50,
-    pixels: 1,
-    pop_size: 400,
-    delta: 0.2,
-    max_iter_uni: 50,
-    max_iter_df: 100
-  });
+  const [params, setParams] = useState(methodConfigs.fgsm.defaults);
   const [error, setError] = useState(null);
   const [originalPrediction, setOriginalPrediction] = useState(null);
   const [adversarialPrediction, setAdversarialPrediction] = useState(null);
   const [imageType, setImageType] = useState('auto');
+  const [isLoading, setIsLoading] = useState(false);
+
+  const handleMethodChange = (e) => {
+    const newMethod = e.target.value;
+    setMethod(newMethod);
+    setParams(methodConfigs[newMethod].defaults);
+  };
 
   const handleImageUpload = (event) => {
     const file = event.target.files[0];
     if (file) {
       setSelectedImage(URL.createObjectURL(file));
-      console.log("Image uploaded:", file.name);
       if (imageType === 'auto') {
         autoDetectImageType(file);
       }
@@ -93,32 +153,30 @@ const AdversaGuardUI = () => {
       const data = await response.json();
       setImageType(data.image_type);
     } catch (e) {
-      console.error("Error detecting image type:", e);
       setError(`Failed to detect image type. Error: ${e.message}`);
     }
   };
 
   const generateAdversarial = async () => {
-    console.log("Generate button clicked");
     if (!selectedImage) {
       setError("Please upload an image first.");
       return;
     }
 
+    setIsLoading(true);
     const formData = new FormData();
     try {
       const imageFile = await fetch(selectedImage).then(r => r.blob());
       formData.append('file', imageFile, 'image.jpg');
       formData.append('method', method);
-      formData.append('epsilon', epsilon);
       formData.append('stealth_mode', stealthMode);
       formData.append('image_type', imageType === 'auto' ? 'detect' : imageType);
-      Object.keys(params).forEach(key => {
-        formData.append(key, params[key]);
-      });
 
-      console.log("Sending request to backend");
-      console.log("FormData contents:", Object.fromEntries(formData));
+      // Only append relevant parameters for the selected method
+      const relevantParams = methodConfigs[method].params;
+      relevantParams.forEach(param => {
+        formData.append(param, params[param]);
+      });
 
       const response = await fetch('http://127.0.0.1:8000/generate_adversarial', {
         method: 'POST',
@@ -131,24 +189,15 @@ const AdversaGuardUI = () => {
       }
 
       const data = await response.json();
-      console.log("Received response from backend:", data);
-
       setAdversarialImage(`data:image/png;base64,${data.adversarial_image}`);
       setOriginalPrediction(data.original_prediction);
       setAdversarialPrediction(data.adversarial_prediction);
     } catch (e) {
-      console.error("Error generating adversarial image:", e);
       setError(`Failed to generate adversarial image. Error: ${e.message}`);
+    } finally {
+      setIsLoading(false);
     }
   };
-
-  const methodOptions = [
-    { value: 'fgsm', label: 'FGSM' },
-    { value: 'pgd', label: 'PGD' },
-    { value: 'deepfool', label: 'DeepFool' },
-    { value: 'one_pixel', label: 'One Pixel' },
-    { value: 'universal', label: 'Universal' },
-  ];
 
   return (
     <ThemeProvider theme={theme}>
@@ -182,6 +231,7 @@ const AdversaGuardUI = () => {
                   <input
                     type="file"
                     hidden
+                    accept="image/*"
                     onChange={handleImageUpload}
                   />
                 </Button>
@@ -202,30 +252,24 @@ const AdversaGuardUI = () => {
                     Classification: {adversarialPrediction}
                   </Typography>
                 )}
-                <Select
-                  value={method}
-                  onChange={(e) => setMethod(e.target.value)}
-                  fullWidth
-                  style={{ marginBottom: '1rem' }}
-                >
-                  {methodOptions.map(option => (
-                    <MenuItem key={option.value} value={option.value}>
-                      {option.label}
-                    </MenuItem>
-                  ))}
-                </Select>
-                <TextField
-                  label="Epsilon"
-                  type="number"
-                  value={epsilon}
-                  onChange={(e) => setEpsilon(parseFloat(e.target.value))}
-                  fullWidth
-                  margin="normal"
-                />
-                <FormControl fullWidth margin="normal">
-                  <InputLabel id="image-type-label">Image Type</InputLabel>
+                <FormControl fullWidth style={{ marginBottom: '1rem' }}>
+                  <InputLabel>Attack Method</InputLabel>
                   <Select
-                    labelId="image-type-label"
+                    value={method}
+                    onChange={handleMethodChange}
+                    label="Attack Method"
+                  >
+                    <MenuItem value="fgsm">FGSM (Fast Gradient Sign Method)</MenuItem>
+                    <MenuItem value="pgd">PGD (Projected Gradient Descent)</MenuItem>
+                    <MenuItem value="deepfool">DeepFool</MenuItem>
+                    <MenuItem value="one_pixel">One Pixel Attack</MenuItem>
+                    <MenuItem value="universal">Universal Adversarial Perturbation</MenuItem>
+                  </Select>
+                </FormControl>
+
+                <FormControl fullWidth margin="normal">
+                  <InputLabel>Image Type</InputLabel>
+                  <Select
                     value={imageType}
                     onChange={(e) => setImageType(e.target.value)}
                     label="Image Type"
@@ -235,6 +279,7 @@ const AdversaGuardUI = () => {
                     <MenuItem value="mushroom">Mushroom</MenuItem>
                   </Select>
                 </FormControl>
+
                 <FormControlLabel
                   control={
                     <Switch
@@ -244,37 +289,32 @@ const AdversaGuardUI = () => {
                   }
                   label="Stealth Mode"
                 />
-                <Button
-                  variant="contained"
-                  color="secondary"
-                  onClick={() => setShowAdvanced(!showAdvanced)}
-                  fullWidth
-                  style={{ marginTop: '1rem', marginBottom: '1rem' }}
-                >
-                  {showAdvanced ? 'Hide Advanced Options' : 'Show Advanced Options'}
-                </Button>
-                <Collapse in={showAdvanced}>
-                  {Object.keys(params).map(key => (
-                    <TextField
-                      key={key}
-                      label={key}
-                      type="number"
-                      name={key}
-                      value={params[key]}
-                      onChange={handleParamChange}
-                      fullWidth
-                      margin="normal"
-                    />
-                  ))}
-                </Collapse>
+
+                <Typography variant="h6" gutterBottom style={{ marginTop: '1rem' }}>
+                  Attack Parameters
+                </Typography>
+                {methodConfigs[method].params.map((param) => (
+                  <TextField
+                    key={param}
+                    label={methodConfigs[method].labels[param]}
+                    type="number"
+                    name={param}
+                    value={params[param]}
+                    onChange={handleParamChange}
+                    fullWidth
+                    margin="normal"
+                  />
+                ))}
+
                 <Button
                   variant="contained"
                   color="primary"
                   onClick={generateAdversarial}
                   fullWidth
                   style={{ marginTop: '1rem' }}
+                  disabled={isLoading || !selectedImage}
                 >
-                  Generate Adversarial
+                  {isLoading ? 'Generating...' : 'Generate Adversarial'}
                 </Button>
               </CardContent>
             </Card>
