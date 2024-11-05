@@ -301,9 +301,11 @@ const generateAdversarial = async () => {
                   >
                     <MenuItem value="fgsm">FGSM (Fast Gradient Sign Method)</MenuItem>
                     <MenuItem value="pgd">PGD (Projected Gradient Descent)</MenuItem>
-                    <MenuItem value="deepfool">DeepFool</MenuItem>
-                    <MenuItem value="one_pixel">One Pixel Attack</MenuItem>
                     <MenuItem value="universal">Universal Adversarial Perturbation</MenuItem>
+                    {/* Temporarily hidden attacks
+                  <MenuItem value="deepfool">DeepFool</MenuItem>
+                  <MenuItem value="one_pixel">One Pixel Attack</MenuItem>
+                  */}
                   </Select>
                 </FormControl>
 
