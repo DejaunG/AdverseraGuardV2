@@ -13,11 +13,14 @@ import {
   FormControlLabel,
   Snackbar,
   FormControl,
-  InputLabel
+  InputLabel,
+  Tooltip,
+  IconButton
 } from '@mui/material';
 import MuiAlert from '@mui/material/Alert';
 import { createTheme, ThemeProvider } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
+import InfoIcon from '@mui/icons-material/Info';
 
 const theme = createTheme({
   palette: {
@@ -34,6 +37,27 @@ const theme = createTheme({
     },
   },
 });
+
+const methodDescriptions = {
+  fgsm: "Fast Gradient Sign Method (FGSM) - Creates adversarial examples by perturbing the input in the direction that maximizes the loss",
+  pgd: "Projected Gradient Descent (PGD) - An iterative version of FGSM that creates stronger adversarial examples by taking multiple smaller steps",
+  universal: "Universal Adversarial Perturbation - Generates a single perturbation pattern that can fool the model across multiple inputs",
+  deepfool: "DeepFool - Efficiently computes the minimal perturbation needed to cross the decision boundary",
+  one_pixel: "One Pixel Attack - Modifies only a limited number of pixels to fool the classifier"
+};
+
+const parameterDescriptions = {
+  epsilon: "Maximum perturbation size allowed (larger values create more noticeable changes)",
+  alpha: "Step size for each iteration (smaller values create more refined perturbations)",
+  num_iter: "Number of iterations to run the attack",
+  num_classes: "Number of classes to consider when generating the adversarial example",
+  overshoot: "How far to push beyond the decision boundary",
+  max_iter: "Maximum number of iterations before stopping",
+  pixels: "Number of pixels to modify in the attack",
+  pop_size: "Size of the population for evolutionary optimization",
+  delta: "Target fooling rate threshold",
+  max_iter_uni: "Maximum iterations for universal perturbation generation"
+};
 
 const methodConfigs = {
   fgsm: {
@@ -155,89 +179,88 @@ const AdversaGuardUI = () => {
     }
   };
 
-const generateAdversarial = async () => {
-  if (!selectedImage) {
-    setError("Please upload an image first.");
-    return;
-  }
-
-  setIsLoading(true);
-  const formData = new FormData();
-
-  try {
-    const imageFile = await fetch(selectedImage).then(r => r.blob());
-    formData.append('file', imageFile, 'image.jpg');
-    formData.append('method', method);
-    formData.append('stealth_mode', stealthMode.toString());
-    formData.append('image_type', imageType === 'auto' ? 'detect' : imageType);
-
-    // Method-specific parameter handling
-    switch (method) {
-      case 'fgsm':
-        formData.append('epsilon', params.epsilon.toString());
-        break;
-
-      case 'pgd':
-        formData.append('epsilon', params.epsilon.toString());
-        formData.append('alpha', params.alpha.toString());
-        formData.append('num_iter', params.num_iter.toString());
-        break;
-
-      case 'deepfool':
-        formData.append('num_classes', params.num_classes.toString());
-        formData.append('overshoot', params.overshoot.toString());
-        formData.append('max_iter', params.max_iter.toString());
-        // Add required default parameters
-        formData.append('epsilon', '0.03'); // Default epsilon for stability
-        break;
-
-      case 'one_pixel':
-        formData.append('pixels', params.pixels.toString());
-        formData.append('max_iter', params.max_iter.toString());
-        formData.append('pop_size', params.pop_size.toString());
-        // Add required default parameters
-        formData.append('epsilon', '0.03'); // Default epsilon for stability
-        break;
-
-      case 'universal':
-        formData.append('epsilon', params.epsilon.toString());
-        formData.append('delta', params.delta.toString());
-        formData.append('max_iter_uni', params.max_iter_uni.toString());
-        formData.append('num_classes', params.num_classes.toString());
-        break;
-
-      default:
-        throw new Error(`Unknown attack method: ${method}`);
+  const generateAdversarial = async () => {
+    if (!selectedImage) {
+      setError("Please upload an image first.");
+      return;
     }
 
-    // Log request parameters for debugging
-    const formDataObj = {};
-    formData.forEach((value, key) => {
-      formDataObj[key] = value;
-    });
-    console.log('Sending request with params:', formDataObj);
+    setIsLoading(true);
+    const formData = new FormData();
 
-    const response = await fetch('http://127.0.0.1:8000/generate_adversarial', {
-      method: 'POST',
-      body: formData,
-    });
+    try {
+      const imageFile = await fetch(selectedImage).then(r => r.blob());
+      formData.append('file', imageFile, 'image.jpg');
+      formData.append('method', method);
+      formData.append('stealth_mode', stealthMode.toString());
+      formData.append('image_type', imageType === 'auto' ? 'detect' : imageType);
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
+      // Method-specific parameter handling
+      switch (method) {
+        case 'fgsm':
+          formData.append('epsilon', params.epsilon.toString());
+          break;
+
+        case 'pgd':
+          formData.append('epsilon', params.epsilon.toString());
+          formData.append('alpha', params.alpha.toString());
+          formData.append('num_iter', params.num_iter.toString());
+          break;
+
+        case 'deepfool':
+          formData.append('num_classes', params.num_classes.toString());
+          formData.append('overshoot', params.overshoot.toString());
+          formData.append('max_iter', params.max_iter.toString());
+          formData.append('epsilon', '0.03');
+          break;
+
+        case 'one_pixel':
+          formData.append('pixels', params.pixels.toString());
+          formData.append('max_iter', params.max_iter.toString());
+          formData.append('pop_size', params.pop_size.toString());
+          formData.append('epsilon', '0.03');
+          break;
+
+        case 'universal':
+          formData.append('epsilon', params.epsilon.toString());
+          formData.append('delta', params.delta.toString());
+          formData.append('max_iter_uni', params.max_iter_uni.toString());
+          formData.append('num_classes', params.num_classes.toString());
+          break;
+
+        default:
+          throw new Error(`Unknown attack method: ${method}`);
+      }
+
+      const response = await fetch('http://127.0.0.1:8000/generate_adversarial', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
+      }
+
+      const data = await response.json();
+      setAdversarialImage(`data:image/png;base64,${data.adversarial_image}`);
+      setOriginalPrediction(data.original_prediction);
+      setAdversarialPrediction(data.adversarial_prediction);
+    } catch (e) {
+      console.error('Error details:', e);
+      setError(`Failed to generate adversarial image. Error: ${e.message}`);
+    } finally {
+      setIsLoading(false);
     }
+  };
 
-    const data = await response.json();
-    setAdversarialImage(`data:image/png;base64,${data.adversarial_image}`);
-    setOriginalPrediction(data.original_prediction);
-    setAdversarialPrediction(data.adversarial_prediction);
-  } catch (e) {
-    console.error('Error details:', e);
-    setError(`Failed to generate adversarial image. Error: ${e.message}`);
-  } finally {
-    setIsLoading(false);
-  }
-};
+  const InfoTooltip = ({ title }) => (
+    <Tooltip title={title}>
+      <IconButton size="small" sx={{ ml: 1, color: 'primary.light', padding: 0 }}>
+        <InfoIcon sx={{ fontSize: 16 }} />
+      </IconButton>
+    </Tooltip>
+  );
 
   return (
     <ThemeProvider theme={theme}>
@@ -299,13 +322,18 @@ const generateAdversarial = async () => {
                     onChange={handleMethodChange}
                     label="Attack Method"
                   >
-                    <MenuItem value="fgsm">FGSM (Fast Gradient Sign Method)</MenuItem>
-                    <MenuItem value="pgd">PGD (Projected Gradient Descent)</MenuItem>
-                    <MenuItem value="universal">Universal Adversarial Perturbation</MenuItem>
-                    {/* Temporarily hidden attacks
-                  <MenuItem value="deepfool">DeepFool</MenuItem>
-                  <MenuItem value="one_pixel">One Pixel Attack</MenuItem>
-                  */}
+                    <MenuItem value="fgsm">
+                      FGSM (Fast Gradient Sign Method)
+                      <InfoTooltip title={methodDescriptions.fgsm} />
+                    </MenuItem>
+                    <MenuItem value="pgd">
+                      PGD (Projected Gradient Descent)
+                      <InfoTooltip title={methodDescriptions.pgd} />
+                    </MenuItem>
+                    <MenuItem value="universal">
+                      Universal Adversarial Perturbation
+                      <InfoTooltip title={methodDescriptions.universal} />
+                    </MenuItem>
                   </Select>
                 </FormControl>
 
@@ -329,28 +357,35 @@ const generateAdversarial = async () => {
                       onChange={(e) => setStealthMode(e.target.checked)}
                     />
                   }
-                  label="Stealth Mode"
+                  label={
+                    <div style={{ display: 'flex', alignItems: 'center' }}>
+                      Stealth Mode
+                      <InfoTooltip title="Attempts to make adversarial perturbations less detectable to human observers" />
+                    </div>
+                  }
                 />
 
                 <Typography variant="h6" gutterBottom style={{ marginTop: '1rem' }}>
                   Attack Parameters
                 </Typography>
                 {methodConfigs[method].params.map((param) => (
-                  <TextField
-                    key={param}
-                    label={methodConfigs[method].labels[param]}
-                    type="number"
-                    name={param}
-                    value={params[param]}
-                    onChange={handleParamChange}
-                    fullWidth
-                    margin="normal"
-                    inputProps={{
-                      step: param.includes('iter') || param === 'pixels' || param === 'pop_size' || param === 'num_classes' ? 1 : 0.01,
-                      min: 0,
-                      max: param === 'epsilon' || param === 'delta' ? 1 : undefined
-                    }}
-                  />
+                  <div key={param} style={{ display: 'flex', alignItems: 'center' }}>
+                    <TextField
+                      label={methodConfigs[method].labels[param]}
+                      type="number"
+                      name={param}
+                      value={params[param]}
+                      onChange={handleParamChange}
+                      fullWidth
+                      margin="normal"
+                      inputProps={{
+                        step: param.includes('iter') || param === 'pixels' || param === 'pop_size' || param === 'num_classes' ? 1 : 0.01,
+                        min: 0,
+                        max: param === 'epsilon' || param === 'delta' ? 1 : undefined
+                      }}
+                    />
+                    <InfoTooltip title={parameterDescriptions[param]} />
+                  </div>
                 ))}
 
                 <Button
