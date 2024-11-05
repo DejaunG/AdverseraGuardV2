@@ -1,175 +1,150 @@
-AdverseraGuard
-AdverseraGuard is a web application that demonstrates adversarial attacks on image classification models. Users can upload images of fish eyes, select an adversarial attack method (FGSM or PGD), generate adversarial images, and see the classification results using a fine-tuned MobileNetV2 model.
+# 🛡️ AdversaGuard: Adversarial Attack Testing Platform
 
-Table of Contents
-Features
-Project Structure
-Prerequisites
-Setup Instructions
-Backend Setup
-Frontend Setup
-Running the Application
-Usage
-Troubleshooting
-Contributing
-License
-Features
-Upload images of fish eyes (fresh or non-fresh).
-Select between FGSM and PGD adversarial attack methods.
-Generate adversarial images.
-Classify images using a fine-tuned MobileNetV2 model.
-Display original and adversarial images along with classification results.
-Project Structure
-kotlin
-Copy code
-adverseraguardv2/
-├── backend/
-│   ├── dataset/
-│   │   ├── train/
-│   │   │   ├── Edible/
-│   │   │   ├── Fresh/
-│   │   │   └── Non-fresh/
-│   │   │   ├── Poisonous/
-│   │   └── val/
-│   │       ├── Edible/
-│   │   │   ├── Fresh/
-│   │   │   └── Non-fresh/
-│   │   │   ├── Poisonous/
-│   ├── venv/
-│   ├── main.py
-│   ├── adversarial_methods.py
-│   ├── train.py
-│   ├── fish_eye_model.pth
-│   └── requirements.txt
-└── frontend/
-    ├── node_modules/
-    ├── public/
-    ├── src/
-    │   ├── components/
-    │   ├── utils/
-    │   ├── App.js
-    │   ├── index.js
-    │   └── index.css
-    ├── package.json
-    └── package-lock.json
-Prerequisites
-Python 3.8 or higher
-Node.js and npm
-Virtual Environment tools (venv)
-Setup Instructions
-Backend Setup
-Navigate to the backend directory:
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Python](https://img.shields.io/badge/Python-3.8%2B-blue)](https://www.python.org/downloads/)
+[![React](https://img.shields.io/badge/React-18.0%2B-blue)](https://reactjs.org/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.95%2B-green)](https://fastapi.tiangolo.com/)
 
-bash
-Copy code
-cd adverseraguardv2/backend
-Create and activate a virtual environment:
+AdversaGuard is a powerful web-based platform for testing and visualizing adversarial attacks on deep learning models. It provides an intuitive interface for generating and analyzing adversarial examples using various attack methods.
 
-For Windows (PowerShell):
+## 🌟 Features
 
-powershell
-Copy code
+- 🎯 Multiple adversarial attack methods:
+  - Fast Gradient Sign Method (FGSM)
+  - Projected Gradient Descent (PGD)
+  - DeepFool
+  - One Pixel Attack
+  - Universal Adversarial Perturbations
+
+- 🔧 Advanced configuration options for each attack method
+- 📊 Real-time visualization of original and adversarial images
+- 🤖 Automatic image type detection
+- 🎨 Modern, responsive UI built with Material-UI
+- 🚀 Fast and efficient backend powered by FastAPI
+
+## 🛠️ Installation
+
+### Prerequisites
+
+- Python 3.8 or higher
+- Node.js 14.0 or higher
+- npm 6.0 or higher
+
+### Backend Setup
+
+```bash
+# Clone the repository
+git clone https://github.com/yourusername/adversaguard.git
+cd adversaguard
+
+# Create and activate virtual environment
 python -m venv venv
-.\venv\Scripts\Activate.ps1
-For Windows (Command Prompt):
+source venv/bin/activate  # On Windows: venv\Scripts\activate
 
-cmd
-Copy code
-python -m venv venv
-venv\Scripts\activate.bat
-For macOS/Linux:
-
-bash
-Copy code
-python3 -m venv venv
-source venv/bin/activate
-Install Python dependencies:
-
-bash
-Copy code
+# Install Python dependencies
+cd backend
 pip install -r requirements.txt
-Prepare the dataset:
+```
 
-Place your images into the corresponding folders in backend/dataset/train/ and backend/dataset/val/.
-Ensure that images are organized under Fresh and Non-fresh subdirectories.
-Train the model:
+### Frontend Setup
 
-bash
-Copy code
-python train.py
-This will generate fish_eye_model.pth in the backend directory.
-Run the backend server:
+```bash
+# Navigate to frontend directory
+cd frontend
 
-bash
-Copy code
-uvicorn main:app --reload
-The server will be accessible at http://localhost:8000.
-Frontend Setup
-Navigate to the frontend directory:
-
-bash
-Copy code
-cd adverseraguardv2/frontend
-Install Node.js dependencies:
-
-bash
-Copy code
+# Install Node dependencies
 npm install
-Start the React application:
 
-bash
-Copy code
+# Create production build
+npm run build
+```
+
+## 🚀 Usage
+
+1. Start the backend server:
+```bash
+cd backend
+python main.py
+```
+
+2. Start the frontend development server:
+```bash
+cd frontend
 npm start
-The application will open in your browser at http://localhost:3000.
-Running the Application
-Ensure both the backend and frontend servers are running.
-Access the application by visiting http://localhost:3000 in your web browser.
-Usage
-Upload an Image:
+```
 
-Click on "Upload Image" and select a fish eye image from your computer.
-Select Attack Method:
+3. Open your browser and navigate to `http://localhost:3000`
 
-Choose either "FGSM" or "PGD" from the dropdown menu.
-Generate Adversarial Image:
+## 💡 How It Works
 
-Click on "Generate Adversarial Image".
-View Results:
+1. Upload an image (supported types: fish eye images or mushroom images)
+2. Select an attack method and configure parameters
+3. Generate adversarial examples
+4. View the results and classifications
 
-The original and adversarial images will be displayed.
-The classification result will be shown below the images.
-Troubleshooting
-An error occurred while processing the image:
+## 🔧 Configuration
 
-Check the backend console for error messages.
-Ensure all dependencies are installed.
-Verify that the model is correctly loaded and the paths are correct.
-CORS Issues:
+### Attack Parameters
 
-If you encounter CORS errors, ensure the CORS middleware is configured in main.py.
-Backend Not Responding:
+- `epsilon`: Perturbation magnitude (default: 0.03)
+- `alpha`: Step size for iterative attacks (default: 0.01)
+- `num_iter`: Number of iterations (default: 40)
+- And more advanced parameters...
 
-Ensure the backend server is running on http://localhost:8000.
-Check for any errors in the backend console.
-Frontend Not Loading:
+### Supported Image Types
 
-Ensure the frontend development server is running.
-Check the browser console for errors.
-Contributing
-Contributions are welcome! Please open an issue or submit a pull request on GitHub.
+- 🐟 Fish Eye Images (Classification: Fresh/Non-Fresh)
+- 🍄 Mushroom Images (Classification: Poisonous/Non-Poisonous)
 
-License
-This project is licensed under the MIT License.
+## 📚 API Documentation
 
-Additional Notes
-Security Considerations:
+The backend API is documented using FastAPI's automatic documentation. After starting the backend server, visit:
 
-In a production environment, update the CORS configuration to allow only trusted origins.
-Validate and sanitize all inputs to prevent security vulnerabilities.
-Data Privacy:
+- Swagger UI: `http://localhost:8000/docs`
+- ReDoc: `http://localhost:8000/redoc`
 
-Ensure that any uploaded images are handled securely and are not stored longer than necessary.
-Performance Optimization:
+## 🧪 Testing
 
-For better performance, consider using a production ASGI server like Gunicorn with Uvicorn workers.
-Use a reverse proxy like Nginx to manage requests.
+### Backend Tests
+```bash
+cd backend
+pytest
+```
+
+### Frontend Tests
+```bash
+cd frontend
+npm test
+```
+
+## 📝 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE.md) file for details.
+
+## 🤝 Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
+3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
+4. Push to the branch (`git push origin feature/AmazingFeature`)
+5. Open a Pull Request
+
+## 🌟 Acknowledgments
+
+- FastAPI for the amazing backend framework
+- React and Material-UI for the frontend components
+- PyTorch for the deep learning capabilities
+
+## 📞 Contact
+
+Website - [FutureForge.xyz](https://www.futureforge.xyz/)
+
+Project Link: [https://github.com/DejaunG/AdverseraGuardV2](https://github.com/DejaunG/AdverseraGuardV2)
+
+---
+
+<p align="center">
+  Made with ❤️ by [Dejaun Gayle]
+</p>
