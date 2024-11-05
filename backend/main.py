@@ -9,6 +9,7 @@ import torchvision.transforms as transforms
 from torchvision.models import resnet50, ResNet50_Weights
 from adversarial_methods import generate_adversarial_example
 import logging
+import numpy as np
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
@@ -41,37 +42,83 @@ custom_classes = {
     'mushroom': ['poisonous', 'non-poisonous']
 }
 
+
+def detect_image_type(image):
+    """
+    Detect whether the image is a fish eye or mushroom based on image analysis.
+    This is a simple example - you might want to use a more sophisticated detection method.
+    """
+    img_array = np.array(image)
+
+    # Convert to grayscale for analysis
+    if len(img_array.shape) == 3:
+        gray = np.mean(img_array, axis=2)
+    else:
+        gray = img_array
+
+    # Simple analysis based on image statistics
+    mean_brightness = np.mean(gray)
+    std_brightness = np.std(gray)
+
+    # These thresholds should be adjusted based on your specific use case
+    if mean_brightness > 100 and std_brightness < 50:
+        return 'fish_eye'
+    else:
+        return 'mushroom'
+
+
 def get_classification(pred_index, image_type):
+    """Map prediction index to custom class labels"""
     if image_type in custom_classes:
         return custom_classes[image_type][pred_index % len(custom_classes[image_type])]
-    else:
-        return f"Class {pred_index}"
+    return f"Class {pred_index}"
+
+
+@app.post("/detect_image_type")
+async def detect_image_type_endpoint(file: UploadFile = File(...)):
+    try:
+        contents = await file.read()
+        image = Image.open(io.BytesIO(contents))
+        detected_type = detect_image_type(image)
+        return JSONResponse({
+            "image_type": detected_type
+        })
+    except Exception as e:
+        logger.exception(f"Error detecting image type: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.post("/generate_adversarial")
 async def generate_adversarial(
-    file: UploadFile = File(...),
-    method: str = Form(...),
-    epsilon: float = Form(...),
-    stealth_mode: bool = Form(...),
-    image_type: str = Form(...),
-    alpha: float = Form(0.01),
-    num_iter: int = Form(40),
-    num_classes: int = Form(1000),
-    overshoot: float = Form(0.02),
-    max_iter: int = Form(50),
-    pixels: int = Form(1),
-    pop_size: int = Form(400),
-    delta: float = Form(0.2),
-    max_iter_uni: int = Form(50),
-    max_iter_df: int = Form(100)
+        file: UploadFile = File(...),
+        method: str = Form(...),
+        epsilon: float = Form(...),
+        stealth_mode: bool = Form(...),
+        image_type: str = Form(...),
+        alpha: float = Form(0.01),
+        num_iter: int = Form(40),
+        num_classes: int = Form(1000),
+        overshoot: float = Form(0.02),
+        max_iter: int = Form(50),
+        pixels: int = Form(1),
+        pop_size: int = Form(400),
+        delta: float = Form(0.2),
+        max_iter_uni: int = Form(50),
+        max_iter_df: int = Form(100)
 ):
-    logger.info(f"Received request: method={method}, epsilon={epsilon}, stealth_mode={stealth_mode}, image_type={image_type}")
+    logger.info(
+        f"Received request: method={method}, epsilon={epsilon}, stealth_mode={stealth_mode}, image_type={image_type}")
     logger.debug(f"All parameters: {locals()}")
+
     try:
         contents = await file.read()
         logger.info(f"File contents size: {len(contents)} bytes")
         image = Image.open(io.BytesIO(contents))
         logger.info(f"Image opened successfully: {image.format}, {image.size}, {image.mode}")
+
+        # Detect image type if set to auto
+        if image_type == 'detect' or image_type == 'auto':
+            image_type = detect_image_type(image)
 
         # Preprocess the image
         input_tensor = preprocess(image)
@@ -108,7 +155,7 @@ async def generate_adversarial(
         # Encode image to base64
         img_base64 = base64.b64encode(img_byte_arr).decode('utf-8')
 
-        # Get classifications
+        # Get classifications using custom classes
         original_class = get_classification(original_pred, image_type)
         adversarial_class = get_classification(adv_pred, image_type)
 
@@ -124,6 +171,8 @@ async def generate_adversarial(
         logger.exception(f"Error generating adversarial image: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(app, host="0.0.0.0", port=8000)
