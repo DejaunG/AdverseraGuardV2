@@ -39,24 +39,30 @@ const theme = createTheme({
 });
 
 const methodDescriptions = {
-  fgsm: "A quick and simple attack that slightly modifies the entire image in a single step. Good for testing basic model vulnerabilities. Fast but may be less effective.",
-  pgd: "A stronger attack that gradually modifies the image over multiple steps. More likely to fool the model than FGSM but takes longer to run. Best for thorough testing.",
-  universal: "Creates a pattern that can fool the model when applied to many different images. Useful for testing overall model security. Takes longer but works on multiple images.",
-  deepfool: "Finds the smallest changes needed to fool the model. Good for understanding model weaknesses with minimal image changes.",
-  one_pixel: "Changes only a few pixels to fool the model. Shows how sensitive the model can be to tiny changes."
+    fgsm: "Fast Gradient Sign Method (FGSM) - A quick attack that modifies the image based on the gradient of the loss. Regular mode creates visible changes while stealth mode makes subtle perturbations. Fast to compute but may be less effective at fooling the model.",
+    pgd: "Projected Gradient Descent (PGD) - An iterative attack that gradually modifies the image to fool the model. Regular mode produces visible alterations while stealth mode creates minimal visual changes. More effective than FGSM but takes longer to compute.",
+    deepfool: "DeepFool - A sophisticated attack that finds the minimal perturbation needed to cross the decision boundary. Creates highly targeted modifications that may be visually noticeable. Good for understanding model decision boundaries.",
+    one_pixel: "One Pixel Attack - Attempts to fool the model by modifying a small number of pixels. Shows how sensitive the model can be to tiny, localized changes. Progress bar shows attack status. More effective on simpler images.",
+    universal: "Universal Adversarial Perturbation - Creates a pattern that can potentially fool the model across multiple images. Takes longer to compute but can reveal systematic model vulnerabilities. Works best with consistent image types."
+};
+
+const imageTypeDescriptions = {
+    auto: "Auto-detection uses our custom trained EfficientNet-B3 model to identify if the image is a fish eye or mushroom.",
+    fish_eye: "Fish eye images are classified as either fresh or non-fresh based on their visual characteristics.",
+    mushroom: "Mushroom images are classified as either poisonous or non-poisonous based on their features.",
 };
 
 const parameterDescriptions = {
-  epsilon: "How much the image can be changed overall. Higher values (like 0.1) make more visible changes but are more likely to work. Lower values (like 0.01) make subtle changes but might be less effective.",
-  alpha: "Size of each change step. Smaller values make more precise changes but take longer. Like walking with smaller steps to reach a destination more accurately.",
-  num_iter: "Number of attempts to modify the image. More attempts usually give better results but take longer. Start with 40-50 and increase if needed.",
-  num_classes: "How many different types of classifications to consider. Higher numbers are more thorough but slower.",
-  overshoot: "How aggressive the attack should be. Higher values make stronger attacks but more visible changes.",
-  max_iter: "Maximum number of tries before stopping. Increase this if the attack isn't successful enough.",
-  pixels: "Number of pixels to change. More pixels = stronger attack but more visible changes.",
-  pop_size: "Number of different variations to try. Larger numbers give better results but take longer.",
-  delta: "How often the attack should successfully fool the model (0-1). Higher values make stronger but more visible attacks.",
-  max_iter_uni: "How many times to try improving the attack. More attempts = better results but longer runtime."
+    epsilon: "Controls the magnitude of image modification. Higher values (like 0.1) create more noticeable changes but are more likely to succeed. Lower values (like 0.01) create subtler changes but might be less effective. In stealth mode, this value is automatically scaled for normalized image space.",
+    alpha: "Step size for iterative attacks like PGD. Smaller values make more precise changes but take longer. Like walking with smaller steps to reach a destination more accurately. Automatically scaled in stealth mode.",
+    num_iter: "Number of iterations for PGD attack. More iterations usually give better results but take longer. Start with 40-50 and increase if needed. Affects both regular and stealth modes equally.",
+    num_classes: "Number of different classes to consider when computing the attack. Higher numbers are more thorough but slower. Used primarily in DeepFool attack.",
+    overshoot: "Used in DeepFool to control how far past the decision boundary to push. Higher values make stronger attacks but more visible changes.",
+    max_iter: "Maximum number of iterations before stopping an attack. Increase this if the attack isn't successful enough.",
+    pixels: "Number of pixels to modify in One Pixel attack. More pixels = stronger attack but more visible changes.",
+    pop_size: "Population size for evolutionary algorithms in One Pixel attack. Larger numbers give better results but take longer.",
+    delta: "Target success rate for Universal attack (0-1). Higher values make stronger but more visible attacks.",
+    max_iter_uni: "Maximum iterations for Universal attack. More attempts = better results but longer runtime."
 };
 
 const methodConfigs = {
@@ -123,12 +129,8 @@ const methodConfigs = {
       num_classes: 'Number of Classes'
     }
   }
-};
-
-const AdversaGuardUI = () => {
-  // Add animation state
+};const AdversaGuardUI = () => {
   const [visible, setVisible] = useState(false);
-
   const [selectedImage, setSelectedImage] = useState(null);
   const [adversarialImage, setAdversarialImage] = useState(null);
   const [method, setMethod] = useState('fgsm');
@@ -139,8 +141,8 @@ const AdversaGuardUI = () => {
   const [adversarialPrediction, setAdversarialPrediction] = useState(null);
   const [imageType, setImageType] = useState('auto');
   const [isLoading, setIsLoading] = useState(false);
+  const [isDetecting, setIsDetecting] = useState(false);
 
-  // Trigger animation on mount
   useEffect(() => {
     setVisible(true);
   }, []);
@@ -167,6 +169,7 @@ const AdversaGuardUI = () => {
   };
 
   const autoDetectImageType = async (file) => {
+    setIsDetecting(true);
     const formData = new FormData();
     formData.append('file', file);
 
@@ -184,6 +187,8 @@ const AdversaGuardUI = () => {
       setImageType(data.image_type);
     } catch (e) {
       setError(`Failed to detect image type. Error: ${e.message}`);
+    } finally {
+      setIsDetecting(false);
     }
   };
 
@@ -270,39 +275,20 @@ const AdversaGuardUI = () => {
     </Tooltip>
   );
 
-  const containerStyles = {
-    minHeight: '100vh',
-    display: 'flex',
-    alignItems: 'center',
-    paddingTop: '2rem',
-    paddingBottom: '2rem',
-    opacity: visible ? 1 : 0,
-    transform: visible ? 'translateY(0)' : 'translateY(20px)',
-    transition: 'opacity 0.5s ease-in-out, transform 0.7s ease-out'
-  };
-
-  const cardStyles = {
-    height: '100%',
-    transition: 'transform 0.3s ease-in-out, box-shadow 0.3s ease-in-out',
-    '&:hover': {
-      transform: 'scale(1.01)',
-      boxShadow: '0 8px 16px rgba(0,0,0,0.2)'
-    }
-  };
-
-  const imageStyles = {
-    width: '100%',
-    marginBottom: '1rem',
-    borderRadius: '4px',
-    transition: 'opacity 0.3s ease-in-out',
-    opacity: 1
-  };
-
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
       <div style={{ backgroundColor: theme.palette.background.default }}>
-        <Container maxWidth="lg" sx={containerStyles}>
+        <Container maxWidth="lg" sx={{
+          minHeight: '100vh',
+          display: 'flex',
+          alignItems: 'center',
+          paddingTop: '2rem',
+          paddingBottom: '2rem',
+          opacity: visible ? 1 : 0,
+          transform: visible ? 'translateY(0)' : 'translateY(20px)',
+          transition: 'opacity 0.5s ease-in-out, transform 0.7s ease-out'
+        }}>
           <div>
             <Typography
               variant="h2"
@@ -319,13 +305,30 @@ const AdversaGuardUI = () => {
             </Typography>
             <Grid container spacing={4}>
               <Grid item xs={12} md={6}>
-                <Card sx={cardStyles}>
+                <Card sx={{
+                  height: '100%',
+                  transition: 'transform 0.3s ease-in-out, box-shadow 0.3s ease-in-out',
+                  '&:hover': {
+                    transform: 'scale(1.01)',
+                    boxShadow: '0 8px 16px rgba(0,0,0,0.2)'
+                  }
+                }}>
                   <CardContent>
                     <Typography variant="h5" gutterBottom>
                       Original Image
                     </Typography>
                     {selectedImage && (
-                      <img src={selectedImage} alt="Original" style={imageStyles} />
+                      <img
+                        src={selectedImage}
+                        alt="Original"
+                        style={{
+                          width: '100%',
+                          marginBottom: '1rem',
+                          borderRadius: '4px',
+                          transition: 'opacity 0.3s ease-in-out',
+                          opacity: 1
+                        }}
+                      />
                     )}
                     {originalPrediction && (
                       <Typography variant="subtitle1" gutterBottom>
@@ -351,15 +354,32 @@ const AdversaGuardUI = () => {
                 </Card>
               </Grid>
               <Grid item xs={12} md={6}>
-                <Card sx={cardStyles}>
+                <Card sx={{
+                  height: '100%',
+                  transition: 'transform 0.3s ease-in-out, box-shadow 0.3s ease-in-out',
+                  '&:hover': {
+                    transform: 'scale(1.01)',
+                    boxShadow: '0 8px 16px rgba(0,0,0,0.2)'
+                  }
+                }}>
                   <CardContent>
                     <Typography variant="h5" gutterBottom>
                       Adversarial Image
                     </Typography>
                     {adversarialImage && (
-                      <img src={adversarialImage} alt="Adversarial" style={imageStyles} />
+                      <img
+                        src={adversarialImage}
+                        alt="Adversarial"
+                        style={{
+                          width: '100%',
+                          marginBottom: '1rem',
+                          borderRadius: '4px',
+                          transition: 'opacity 0.3s ease-in-out',
+                          opacity: 1
+                        }}
+                      />
                     )}
-                    {adversarialPrediction && (
+      {adversarialPrediction && (
                       <Typography variant="subtitle1" gutterBottom>
                         Classification: {adversarialPrediction}
                       </Typography>
@@ -379,6 +399,14 @@ const AdversaGuardUI = () => {
                           Projected Gradient Descent (PGD)
                           <InfoTooltip title={methodDescriptions.pgd} />
                         </MenuItem>
+                        <MenuItem value="deepfool">
+                          DeepFool
+                          <InfoTooltip title={methodDescriptions.deepfool} />
+                        </MenuItem>
+                        <MenuItem value="one_pixel">
+                          One Pixel Attack
+                          <InfoTooltip title={methodDescriptions.one_pixel} />
+                        </MenuItem>
                         <MenuItem value="universal">
                           Universal Adversarial Perturbation
                           <InfoTooltip title={methodDescriptions.universal} />
@@ -386,17 +414,31 @@ const AdversaGuardUI = () => {
                       </Select>
                     </FormControl>
 
-                    <FormControl fullWidth sx={{ mb: 2 }}>
+                    <FormControl fullWidth margin="normal">
                       <InputLabel>Image Type</InputLabel>
                       <Select
                         value={imageType}
                         onChange={(e) => setImageType(e.target.value)}
                         label="Image Type"
                       >
-                        <MenuItem value="auto">Auto Detect</MenuItem>
-                        <MenuItem value="fish_eye">Fish Eye</MenuItem>
-                        <MenuItem value="mushroom">Mushroom</MenuItem>
+                        <MenuItem value="auto">
+                          Auto Detect
+                          <InfoTooltip title={imageTypeDescriptions.auto} />
+                        </MenuItem>
+                        <MenuItem value="fish_eye">
+                          Fish Eye
+                          <InfoTooltip title={imageTypeDescriptions.fish_eye} />
+                        </MenuItem>
+                        <MenuItem value="mushroom">
+                          Mushroom
+                          <InfoTooltip title={imageTypeDescriptions.mushroom} />
+                        </MenuItem>
                       </Select>
+                      {isDetecting && (
+                        <Typography variant="caption" color="textSecondary">
+                          Detecting image type...
+                        </Typography>
+                      )}
                     </FormControl>
 
                     <FormControlLabel
@@ -409,7 +451,9 @@ const AdversaGuardUI = () => {
                       label={
                         <div style={{ display: 'flex', alignItems: 'center' }}>
                           Stealth Mode
-                          <InfoTooltip title="When turned on, tries to make changes to the image that are harder for humans to notice." />
+                          <InfoTooltip
+                            title="When enabled, perturbations are carefully scaled in normalized image space to maintain image appearance while still attempting to fool the model. When disabled, creates more visible changes that clearly show the adversarial effect. Currently affects FGSM and PGD attacks."
+                          />
                         </div>
                       }
                       sx={{ mb: 2 }}
