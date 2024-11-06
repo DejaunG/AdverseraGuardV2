@@ -15,12 +15,18 @@ import {
   FormControl,
   InputLabel,
   Tooltip,
-  IconButton
+  IconButton,
+  Chip,
+  Box,
+  Stack,
 } from '@mui/material';
 import MuiAlert from '@mui/material/Alert';
 import { createTheme, ThemeProvider } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
 import InfoIcon from '@mui/icons-material/Info';
+import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import WarningIcon from '@mui/icons-material/Warning';
+import CompareArrowsIcon from '@mui/icons-material/CompareArrows';
 
 const theme = createTheme({
   palette: {
@@ -129,7 +135,9 @@ const methodConfigs = {
       num_classes: 'Number of Classes'
     }
   }
-};const AdversaGuardUI = () => {
+};
+
+const AdversaGuardUI = () => {
   const [visible, setVisible] = useState(false);
   const [selectedImage, setSelectedImage] = useState(null);
   const [adversarialImage, setAdversarialImage] = useState(null);
@@ -147,6 +155,89 @@ const methodConfigs = {
     setVisible(true);
   }, []);
 
+  const ClassificationDisplay = ({ original, adversarial }) => {
+    if (!original && !adversarial) return null;
+
+    const hasChanged = original !== adversarial;
+    const getChipColor = (isOriginal) => {
+      if (!hasChanged) return "success";
+      return isOriginal ? "success" : "warning";
+    };
+
+    return (
+      <Box
+        sx={{
+          mt: 2,
+          mb: 2,
+          backgroundColor: 'background.paper',
+          p: 2,
+          borderRadius: 1,
+          transition: 'all 0.3s ease-in-out',
+          '&:hover': {
+            transform: 'scale(1.01)',
+            boxShadow: '0 4px 8px rgba(0,0,0,0.2)'
+          }
+        }}
+      >
+        <Stack
+          direction={{ xs: 'column', sm: 'row' }}
+          spacing={2}
+          alignItems="center"
+          justifyContent="center"
+          divider={<CompareArrowsIcon color="action" sx={{ display: { xs: 'none', sm: 'block' } }} />}
+        >
+          <Box sx={{ textAlign: 'center' }}>
+            <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+              Original
+            </Typography>
+            <Chip
+              label={original || 'No prediction'}
+              color={getChipColor(true)}
+              icon={<CheckCircleIcon />}
+              variant="filled"
+              sx={{
+                minWidth: 120,
+                transition: 'all 0.3s ease-in-out',
+                '& .MuiChip-icon': { color: 'inherit' }
+              }}
+            />
+          </Box>
+
+          <Box sx={{ textAlign: 'center' }}>
+            <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+              Adversarial
+            </Typography>
+            <Chip
+              label={adversarial || 'No prediction'}
+              color={getChipColor(false)}
+              icon={hasChanged ? <WarningIcon /> : <CheckCircleIcon />}
+              variant="filled"
+              sx={{
+                minWidth: 120,
+                transition: 'all 0.3s ease-in-out',
+                '& .MuiChip-icon': { color: 'inherit' }
+              }}
+            />
+          </Box>
+        </Stack>
+
+        {hasChanged && (
+          <Typography
+            variant="body2"
+            color="warning.main"
+            sx={{
+              mt: 2,
+              textAlign: 'center',
+              opacity: 0.9,
+              animation: 'pulse 2s infinite'
+            }}
+          >
+            Classification Changed Successfully
+          </Typography>
+        )}
+      </Box>
+    );
+  };
   const handleMethodChange = (e) => {
     const newMethod = e.target.value;
     setMethod(newMethod);
@@ -303,6 +394,12 @@ const methodConfigs = {
             >
               AdversaGuard
             </Typography>
+
+            <ClassificationDisplay
+              original={originalPrediction}
+              adversarial={adversarialPrediction}
+            />
+
             <Grid container spacing={4}>
               <Grid item xs={12} md={6}>
                 <Card sx={{
@@ -330,11 +427,6 @@ const methodConfigs = {
                         }}
                       />
                     )}
-                    {originalPrediction && (
-                      <Typography variant="subtitle1" gutterBottom>
-                        Classification: {originalPrediction}
-                      </Typography>
-                    )}
                     <Button
                       variant="contained"
                       component="label"
@@ -353,6 +445,7 @@ const methodConfigs = {
                   </CardContent>
                 </Card>
               </Grid>
+
               <Grid item xs={12} md={6}>
                 <Card sx={{
                   height: '100%',
@@ -379,12 +472,8 @@ const methodConfigs = {
                         }}
                       />
                     )}
-      {adversarialPrediction && (
-                      <Typography variant="subtitle1" gutterBottom>
-                        Classification: {adversarialPrediction}
-                      </Typography>
-                    )}
-                    <FormControl fullWidth sx={{ mb: 2 }}>
+
+      <FormControl fullWidth sx={{ mb: 2 }}>
                       <InputLabel>Attack Method</InputLabel>
                       <Select
                         value={method}
@@ -508,7 +597,7 @@ const methodConfigs = {
             </Grid>
           </div>
         </Container>
-        <Snackbar
+         <Snackbar
           open={!!error}
           autoHideDuration={6000}
           onClose={() => setError(null)}
