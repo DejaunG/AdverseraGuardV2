@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Button,
   Card,
@@ -58,7 +58,6 @@ const parameterDescriptions = {
   delta: "How often the attack should successfully fool the model (0-1). Higher values make stronger but more visible attacks.",
   max_iter_uni: "How many times to try improving the attack. More attempts = better results but longer runtime."
 };
-
 
 const methodConfigs = {
   fgsm: {
@@ -127,6 +126,9 @@ const methodConfigs = {
 };
 
 const AdversaGuardUI = () => {
+  // Add animation state
+  const [visible, setVisible] = useState(false);
+
   const [selectedImage, setSelectedImage] = useState(null);
   const [adversarialImage, setAdversarialImage] = useState(null);
   const [method, setMethod] = useState('fgsm');
@@ -137,6 +139,11 @@ const AdversaGuardUI = () => {
   const [adversarialPrediction, setAdversarialPrediction] = useState(null);
   const [imageType, setImageType] = useState('auto');
   const [isLoading, setIsLoading] = useState(false);
+
+  // Trigger animation on mount
+  useEffect(() => {
+    setVisible(true);
+  }, []);
 
   const handleMethodChange = (e) => {
     const newMethod = e.target.value;
@@ -263,157 +270,217 @@ const AdversaGuardUI = () => {
     </Tooltip>
   );
 
+  const containerStyles = {
+    minHeight: '100vh',
+    display: 'flex',
+    alignItems: 'center',
+    paddingTop: '2rem',
+    paddingBottom: '2rem',
+    opacity: visible ? 1 : 0,
+    transform: visible ? 'translateY(0)' : 'translateY(20px)',
+    transition: 'opacity 0.5s ease-in-out, transform 0.7s ease-out'
+  };
+
+  const cardStyles = {
+    height: '100%',
+    transition: 'transform 0.3s ease-in-out, box-shadow 0.3s ease-in-out',
+    '&:hover': {
+      transform: 'scale(1.01)',
+      boxShadow: '0 8px 16px rgba(0,0,0,0.2)'
+    }
+  };
+
+  const imageStyles = {
+    width: '100%',
+    marginBottom: '1rem',
+    borderRadius: '4px',
+    transition: 'opacity 0.3s ease-in-out',
+    opacity: 1
+  };
+
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
-      <Container maxWidth="lg">
-        <Typography variant="h2" align="center" gutterBottom style={{ color: '#4caf50' }}>
-          AdversaGuard
-        </Typography>
-        <Grid container spacing={3}>
-          <Grid item xs={12} md={6}>
-            <Card>
-              <CardContent>
-                <Typography variant="h5" gutterBottom>
-                  Original Image
-                </Typography>
-                {selectedImage && (
-                  <img src={selectedImage} alt="Original" style={{ width: '100%', marginBottom: '1rem' }} />
-                )}
-                {originalPrediction && (
-                  <Typography variant="subtitle1" gutterBottom>
-                    Classification: {originalPrediction}
-                  </Typography>
-                )}
-                <Button
-                  variant="contained"
-                  component="label"
-                  fullWidth
-                  color="primary"
-                >
-                  Upload Image
-                  <input
-                    type="file"
-                    hidden
-                    accept="image/*"
-                    onChange={handleImageUpload}
-                  />
-                </Button>
-              </CardContent>
-            </Card>
-          </Grid>
-          <Grid item xs={12} md={6}>
-            <Card>
-              <CardContent>
-                <Typography variant="h5" gutterBottom>
-                  Adversarial Image
-                </Typography>
-                {adversarialImage && (
-                  <img src={adversarialImage} alt="Adversarial" style={{ width: '100%', marginBottom: '1rem' }} />
-                )}
-                {adversarialPrediction && (
-                  <Typography variant="subtitle1" gutterBottom>
-                    Classification: {adversarialPrediction}
-                  </Typography>
-                )}
-                <FormControl fullWidth style={{ marginBottom: '1rem' }}>
-                  <InputLabel>Attack Method</InputLabel>
-                  <Select
-                    value={method}
-                    onChange={handleMethodChange}
-                    label="Attack Method"
-                  >
-                    <MenuItem value="fgsm">
-                      Fast Gradient Sign Method (FGSM)
-                      <InfoTooltip title={methodDescriptions.fgsm} />
-                    </MenuItem>
-                    <MenuItem value="pgd">
-                      Projected Gradient Descent (PGD)
-                      <InfoTooltip title={methodDescriptions.pgd} />
-                    </MenuItem>
-                    <MenuItem value="universal">
-                      Universal Adversarial Perturbation
-                      <InfoTooltip title={methodDescriptions.universal} />
-                    </MenuItem>
-                  </Select>
-                </FormControl>
-
-                <FormControl fullWidth margin="normal">
-                  <InputLabel>Image Type</InputLabel>
-                  <Select
-                    value={imageType}
-                    onChange={(e) => setImageType(e.target.value)}
-                    label="Image Type"
-                  >
-                    <MenuItem value="auto">Auto Detect</MenuItem>
-                    <MenuItem value="fish_eye">Fish Eye</MenuItem>
-                    <MenuItem value="mushroom">Mushroom</MenuItem>
-                  </Select>
-                </FormControl>
-
-                <FormControlLabel
-                  control={
-                    <Switch
-                      checked={stealthMode}
-                      onChange={(e) => setStealthMode(e.target.checked)}
-                    />
-                  }
-                  label={
-                    <div style={{ display: 'flex', alignItems: 'center' }}>
-                      Stealth Mode
-                      <InfoTooltip title="When turned on, tries to make changes to the image that are harder for humans to notice." />
-                    </div>
-                  }
-                />
-
-                <Typography variant="h6" gutterBottom style={{ marginTop: '1rem' }}>
-                  Attack Parameters
-                </Typography>
-                {methodConfigs[method].params.map((param) => (
-                  <div key={param} style={{ display: 'flex', alignItems: 'center' }}>
-                    <TextField
-                      label={methodConfigs[method].labels[param]}
-                      type="number"
-                      name={param}
-                      value={params[param]}
-                      onChange={handleParamChange}
+      <div style={{ backgroundColor: theme.palette.background.default }}>
+        <Container maxWidth="lg" sx={containerStyles}>
+          <div>
+            <Typography
+              variant="h2"
+              align="center"
+              gutterBottom
+              sx={{
+                color: '#4caf50',
+                marginBottom: '2rem',
+                transition: 'opacity 0.5s ease-in-out',
+                opacity: visible ? 1 : 0
+              }}
+            >
+              AdversaGuard
+            </Typography>
+            <Grid container spacing={4}>
+              <Grid item xs={12} md={6}>
+                <Card sx={cardStyles}>
+                  <CardContent>
+                    <Typography variant="h5" gutterBottom>
+                      Original Image
+                    </Typography>
+                    {selectedImage && (
+                      <img src={selectedImage} alt="Original" style={imageStyles} />
+                    )}
+                    {originalPrediction && (
+                      <Typography variant="subtitle1" gutterBottom>
+                        Classification: {originalPrediction}
+                      </Typography>
+                    )}
+                    <Button
+                      variant="contained"
+                      component="label"
                       fullWidth
-                      margin="normal"
-                      inputProps={{
-                        step: param.includes('iter') || param === 'pixels' || param === 'pop_size' || param === 'num_classes' ? 1 : 0.01,
-                        min: 0,
-                        max: param === 'epsilon' || param === 'delta' ? 1 : undefined
-                      }}
-                    />
-                    <InfoTooltip title={parameterDescriptions[param]} />
-                  </div>
-                ))}
+                      color="primary"
+                      sx={{ transition: 'transform 0.2s ease' }}
+                    >
+                      Upload Image
+                      <input
+                        type="file"
+                        hidden
+                        accept="image/*"
+                        onChange={handleImageUpload}
+                      />
+                    </Button>
+                  </CardContent>
+                </Card>
+              </Grid>
+              <Grid item xs={12} md={6}>
+                <Card sx={cardStyles}>
+                  <CardContent>
+                    <Typography variant="h5" gutterBottom>
+                      Adversarial Image
+                    </Typography>
+                    {adversarialImage && (
+                      <img src={adversarialImage} alt="Adversarial" style={imageStyles} />
+                    )}
+                    {adversarialPrediction && (
+                      <Typography variant="subtitle1" gutterBottom>
+                        Classification: {adversarialPrediction}
+                      </Typography>
+                    )}
+                    <FormControl fullWidth sx={{ mb: 2 }}>
+                      <InputLabel>Attack Method</InputLabel>
+                      <Select
+                        value={method}
+                        onChange={handleMethodChange}
+                        label="Attack Method"
+                      >
+                        <MenuItem value="fgsm">
+                          Fast Gradient Sign Method (FGSM)
+                          <InfoTooltip title={methodDescriptions.fgsm} />
+                        </MenuItem>
+                        <MenuItem value="pgd">
+                          Projected Gradient Descent (PGD)
+                          <InfoTooltip title={methodDescriptions.pgd} />
+                        </MenuItem>
+                        <MenuItem value="universal">
+                          Universal Adversarial Perturbation
+                          <InfoTooltip title={methodDescriptions.universal} />
+                        </MenuItem>
+                      </Select>
+                    </FormControl>
 
-                <Button
-                  variant="contained"
-                  color="primary"
-                  onClick={generateAdversarial}
-                  fullWidth
-                  style={{ marginTop: '1rem' }}
-                  disabled={isLoading || !selectedImage}
-                >
-                  {isLoading ? 'Generating...' : 'Generate Adversarial'}
-                </Button>
-              </CardContent>
-            </Card>
-          </Grid>
-        </Grid>
+                    <FormControl fullWidth sx={{ mb: 2 }}>
+                      <InputLabel>Image Type</InputLabel>
+                      <Select
+                        value={imageType}
+                        onChange={(e) => setImageType(e.target.value)}
+                        label="Image Type"
+                      >
+                        <MenuItem value="auto">Auto Detect</MenuItem>
+                        <MenuItem value="fish_eye">Fish Eye</MenuItem>
+                        <MenuItem value="mushroom">Mushroom</MenuItem>
+                      </Select>
+                    </FormControl>
+
+                    <FormControlLabel
+                      control={
+                        <Switch
+                          checked={stealthMode}
+                          onChange={(e) => setStealthMode(e.target.checked)}
+                        />
+                      }
+                      label={
+                        <div style={{ display: 'flex', alignItems: 'center' }}>
+                          Stealth Mode
+                          <InfoTooltip title="When turned on, tries to make changes to the image that are harder for humans to notice." />
+                        </div>
+                      }
+                      sx={{ mb: 2 }}
+                    />
+
+                    <Typography variant="h6" gutterBottom sx={{ mt: 2 }}>
+                      Attack Parameters
+                    </Typography>
+                    {methodConfigs[method].params.map((param) => (
+                      <div key={param} style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        transition: 'opacity 0.3s ease-in-out'
+                      }}>
+                        <TextField
+                          label={methodConfigs[method].labels[param]}
+                          type="number"
+                          name={param}
+                          value={params[param]}
+                          onChange={handleParamChange}
+                          fullWidth
+                          margin="normal"
+                          inputProps={{
+                            step: param.includes('iter') || param === 'pixels' || param === 'pop_size' || param === 'num_classes' ? 1 : 0.01,
+                            min: 0,
+                            max: param === 'epsilon' || param === 'delta' ? 1 : undefined
+                          }}
+                        />
+                        <InfoTooltip title={parameterDescriptions[param]} />
+                      </div>
+                    ))}
+
+                    <Button
+                      variant="contained"
+                      color="primary"
+                      onClick={generateAdversarial}
+                      fullWidth
+                      sx={{
+                        mt: 2,
+                        transition: 'all 0.3s ease-in-out',
+                        '&:hover': {
+                          transform: 'scale(1.02)'
+                        }
+                      }}
+                      disabled={isLoading || !selectedImage}
+                    >
+                      {isLoading ? 'Generating...' : 'Generate Adversarial'}
+                    </Button>
+                  </CardContent>
+                </Card>
+              </Grid>
+            </Grid>
+          </div>
+        </Container>
         <Snackbar
           open={!!error}
           autoHideDuration={6000}
           onClose={() => setError(null)}
           anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
         >
-          <MuiAlert elevation={6} variant="filled" severity="error" onClose={() => setError(null)}>
+          <MuiAlert
+            elevation={6}
+            variant="filled"
+            severity="error"
+            onClose={() => setError(null)}
+            sx={{ opacity: error ? 1 : 0, transition: 'opacity 0.3s ease-in-out' }}
+          >
             {error}
           </MuiAlert>
         </Snackbar>
-      </Container>
+      </div>
     </ThemeProvider>
   );
 };
