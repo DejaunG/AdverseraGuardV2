@@ -7,20 +7,35 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-def fgsm_attack(model, image, label, epsilon=0.03):
-    """FGSM attack remains unchanged as it's working correctly"""
+def fgsm_attack(model, image, label, epsilon=0.03, stealth_mode=False):
+    """FGSM attack with stealth mode option"""
     image.requires_grad = True
     output = model(image)
     loss = F.nll_loss(F.log_softmax(output, dim=1), label)
     model.zero_grad()
     loss.backward()
-    perturbed_image = image + epsilon * image.grad.data.sign()
-    perturbed_image = torch.clamp(perturbed_image, 0, 1)
+
+    if stealth_mode:
+        # Scale epsilon for normalized space in stealth mode
+        scaled_epsilon = epsilon * torch.tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1).to(image.device)
+        perturbed_image = image + scaled_epsilon * image.grad.data.sign()
+    else:
+        # Regular mode with more visible perturbations
+        perturbed_image = image + epsilon * image.grad.data.sign()
+
     return perturbed_image
 
 
-def pgd_attack(model, image, label, epsilon=0.03, alpha=0.005, num_iter=40):
-    """PGD attack remains unchanged as it's working correctly"""
+def pgd_attack(model, image, label, epsilon=0.03, alpha=0.005, num_iter=40, stealth_mode=False):
+    """PGD attack with stealth mode option"""
+    if stealth_mode:
+        # Scale parameters for normalized space
+        scaled_epsilon = epsilon * torch.tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1).to(image.device)
+        scaled_alpha = alpha * torch.tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1).to(image.device)
+    else:
+        scaled_epsilon = epsilon
+        scaled_alpha = alpha
+
     perturbed_image = image.clone().detach()
     for _ in range(num_iter):
         perturbed_image.requires_grad = True
@@ -28,9 +43,9 @@ def pgd_attack(model, image, label, epsilon=0.03, alpha=0.005, num_iter=40):
         loss = F.nll_loss(F.log_softmax(output, dim=1), label)
         model.zero_grad()
         loss.backward()
-        adv_image = perturbed_image + alpha * perturbed_image.grad.sign()
-        eta = torch.clamp(adv_image - image, min=-epsilon, max=epsilon)
-        perturbed_image = torch.clamp(image + eta, min=0, max=1).detach()
+        adv_image = perturbed_image + scaled_alpha * perturbed_image.grad.sign()
+        eta = torch.clamp(adv_image - image, min=-scaled_epsilon, max=scaled_epsilon)
+        perturbed_image = (image + eta).detach()
     return perturbed_image
 
 
@@ -252,20 +267,20 @@ def universal_adversarial_perturbation(model, image, epsilon=0.1, delta=0.2, max
     return torch.clamp(image + perturbation, 0, 1)
 
 
-def generate_adversarial_example(model, image, label, method='fgsm', **kwargs):
-    """Main function remains the same but with improved error handling"""
+def generate_adversarial_example(model, image, label, method='fgsm', stealth_mode=False, **kwargs):
+    """Main function with stealth mode handling"""
     try:
-        logger.info(f"Generating adversarial example using {method} method...")
+        logger.info(f"Generating adversarial example using {method} method (stealth_mode={stealth_mode})...")
 
         if method == 'fgsm':
             epsilon = kwargs.get('epsilon', 0.03)
-            return fgsm_attack(model, image, label, epsilon)
+            return fgsm_attack(model, image, label, epsilon, stealth_mode)
 
         elif method == 'pgd':
             epsilon = kwargs.get('epsilon', 0.03)
             alpha = kwargs.get('alpha', 0.005)
             num_iter = kwargs.get('num_iter', 40)
-            return pgd_attack(model, image, label, epsilon, alpha, num_iter)
+            return pgd_attack(model, image, label, epsilon, alpha, num_iter, stealth_mode)
 
         elif method == 'deepfool':
             num_classes = kwargs.get('num_classes', 1000)

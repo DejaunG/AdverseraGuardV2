@@ -110,6 +110,20 @@ async def detect_image_type_endpoint(file: UploadFile = File(...)):
         logger.exception(f"Error detecting image type: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
+# Add denormalization transform
+denormalize = transforms.Compose([
+    transforms.Normalize(mean=[0., 0., 0.],
+                         std=[1 / 0.229, 1 / 0.224, 1 / 0.225]),
+    transforms.Normalize(mean=[-0.485, -0.456, -0.406],
+                         std=[1., 1., 1.]),
+])
+
+# Add normalization transform
+normalize = transforms.Normalize(
+    mean=[0.485, 0.456, 0.406],
+    std=[0.229, 0.224, 0.225]
+)
+
 
 @app.post("/generate_adversarial")
 async def generate_adversarial(
@@ -147,22 +161,41 @@ async def generate_adversarial(
         # Get original classification from our model
         original_class = get_classification(input_batch, image_type)
 
-        # Generate adversarial example
-        adversarial_image = generate_adversarial_example(
-            adversarial_model, input_batch, torch.tensor([0]).to(device), method,
-            epsilon=epsilon, alpha=alpha, num_iter=num_iter,
-            num_classes=num_classes, overshoot=overshoot, max_iter=max_iter,
-            pixels=pixels, pop_size=pop_size, delta=delta,
-            max_iter_uni=max_iter_uni, max_iter_df=max_iter_df,
-            stealth_mode=stealth_mode
-        )
+        if stealth_mode:
+            # Stealth mode: Use normalized perturbations
+            adversarial_image = generate_adversarial_example(
+                adversarial_model, input_batch, torch.tensor([0]).to(device), method,
+                epsilon=epsilon, alpha=alpha, num_iter=num_iter,
+                num_classes=num_classes, overshoot=overshoot, max_iter=max_iter,
+                pixels=pixels, pop_size=pop_size, delta=delta,
+                max_iter_uni=max_iter_uni, max_iter_df=max_iter_df,
+                stealth_mode=stealth_mode
+            )
+            # Get classification for adversarial image (still normalized)
+            adversarial_class = get_classification(adversarial_image, image_type)
+            # Denormalize only for display
+            display_image = denormalize(adversarial_image)
+        else:
+            # Non-stealth mode: Use denormalized perturbations for visible effect
+            input_denorm = denormalize(input_batch)
+            adversarial_image = generate_adversarial_example(
+                adversarial_model, input_denorm, torch.tensor([0]).to(device), method,
+                epsilon=epsilon, alpha=alpha, num_iter=num_iter,
+                num_classes=num_classes, overshoot=overshoot, max_iter=max_iter,
+                pixels=pixels, pop_size=pop_size, delta=delta,
+                max_iter_uni=max_iter_uni, max_iter_df=max_iter_df,
+                stealth_mode=stealth_mode
+            )
+            # Clamp the denormalized image
+            adversarial_image = torch.clamp(adversarial_image, 0, 1)
+            # Normalize for classification
+            adv_normalized = normalize(adversarial_image[0]).unsqueeze(0)
+            adversarial_class = get_classification(adv_normalized, image_type)
+            display_image = adversarial_image
 
-        # Get classification for adversarial image from our model
-        adversarial_class = get_classification(adversarial_image, image_type)
-
-        # Convert tensor to PIL Image
+        # Convert to PIL image
         to_pil = transforms.ToPILImage()
-        adv_image_pil = to_pil(adversarial_image.squeeze(0))
+        adv_image_pil = to_pil(torch.clamp(display_image.squeeze(0).cpu(), 0, 1))
 
         # Save to bytes
         img_byte_arr = io.BytesIO()
@@ -183,7 +216,6 @@ async def generate_adversarial(
     except Exception as e:
         logger.exception(f"Error generating adversarial image: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
-
 
 if __name__ == "__main__":
     import uvicorn
