@@ -94,36 +94,70 @@ normalize = transforms.Normalize(
 # Class names and mappings
 class_names = ['fresh_fish_eye', 'non_fresh_fish_eye', 'poisonous_mushroom', 'non_poisonous_mushroom']
 
-def get_classification(image_tensor, image_type):
-    """Get classification from our custom model"""
-    with torch.no_grad():
-        output = classification_model(image_tensor)
-        prediction = torch.argmax(output, dim=1).item()
-        class_name = class_names[prediction]
 
-        if 'fish_eye' in class_name:
-            return 'fresh' if 'fresh_' in class_name else 'non-fresh'
-        else:
-            return 'poisonous' if 'poisonous_' in class_name else 'non-poisonous'
+def get_classification(image_tensor, image_type):
+    """Get classification from our custom model with detailed logging"""
+    logger.debug(f"Getting classification for image_type: {image_type}")
+    try:
+        with torch.no_grad():
+            # Ensure the tensor is on the correct device
+            if not image_tensor.is_cuda and torch.cuda.is_available():
+                image_tensor = image_tensor.to(device)
+
+            # Log tensor shape and values for debugging
+            logger.debug(f"Input tensor shape: {image_tensor.shape}")
+            logger.debug(f"Input tensor range: [{image_tensor.min():.3f}, {image_tensor.max():.3f}]")
+
+            # Get model prediction
+            output = classification_model(image_tensor)
+            probabilities = torch.nn.functional.softmax(output, dim=1)
+            prediction = torch.argmax(output, dim=1).item()
+            confidence = probabilities[0][prediction].item()
+
+            class_name = class_names[prediction]
+            logger.info(f"Raw prediction: {prediction}, Class: {class_name}, Confidence: {confidence:.3f}")
+
+            # Determine final classification
+            if 'fish_eye' in class_name:
+                result = 'fresh' if 'fresh_' in class_name else 'non-fresh'
+            else:
+                result = 'poisonous' if 'poisonous_' in class_name else 'non-poisonous'
+
+            logger.info(f"Final classification: {result} for {image_type}")
+            return result
+
+    except Exception as e:
+        logger.exception("Error in get_classification")
+        raise e
 
 
 def detect_image_type(image):
-    """Detect image type using the custom trained model"""
-    if image.mode != 'RGB':
-        image = image.convert('RGB')
+    """Detect image type using the custom trained model with logging"""
+    logger.info("Detecting image type...")
+    try:
+        if image.mode != 'RGB':
+            image = image.convert('RGB')
+            logger.debug("Converted image to RGB")
 
-    input_tensor = preprocess(image)
-    input_batch = input_tensor.unsqueeze(0).to(device)
+        input_tensor = preprocess(image)
+        input_batch = input_tensor.unsqueeze(0).to(device)
 
-    with torch.no_grad():
-        output = classification_model(input_batch)
-        prediction = torch.argmax(output, dim=1).item()
-        predicted_class = class_names[prediction]
+        with torch.no_grad():
+            output = classification_model(input_batch)
+            probabilities = torch.nn.functional.softmax(output, dim=1)
+            prediction = torch.argmax(output, dim=1).item()
+            confidence = probabilities[0][prediction].item()
 
-    if 'fish_eye' in predicted_class:
-        return 'fish_eye'
-    else:
-        return 'mushroom'
+            predicted_class = class_names[prediction]
+            logger.info(f"Type detection - Class: {predicted_class}, Confidence: {confidence:.3f}")
+
+            image_type = 'fish_eye' if 'fish_eye' in predicted_class else 'mushroom'
+            logger.info(f"Detected image type: {image_type}")
+            return image_type
+
+    except Exception as e:
+        logger.exception("Error in detect_image_type")
+        raise e
 
 
 @app.get("/gallery/{category}")
@@ -246,6 +280,7 @@ async def generate_adversarial(
         max_iter_df: int = Form(100)
 ):
     try:
+        logger.info(f"Starting adversarial generation with method: {method}")
         contents = await file.read()
         try:
             image = Image.open(io.BytesIO(contents))
@@ -258,26 +293,40 @@ async def generate_adversarial(
         if image.mode != 'RGB':
             image = image.convert('RGB')
 
+        # Auto-detect image type if needed
         if image_type == 'detect' or image_type == 'auto':
             image_type = detect_image_type(image)
-            logger.info(f"Detected image type: {image_type}")
+            logger.info(f"Auto-detected image type: {image_type}")
 
+        # Preprocess image
         input_tensor = preprocess(image)
         input_batch = input_tensor.unsqueeze(0).to(device)
 
+        # Get original classification
         original_class = get_classification(input_batch, image_type)
         logger.info(f"Original classification: {original_class}")
 
         try:
+            # Generate adversarial example
             if stealth_mode:
                 logger.info("Using stealth mode with normalized perturbations")
                 from adversarial_methods import generate_adversarial_example
                 adversarial_image = generate_adversarial_example(
-                    adversarial_model, input_batch, torch.tensor([0]).to(device), method,
-                    epsilon=epsilon, alpha=alpha, num_iter=num_iter,
-                    num_classes=num_classes, overshoot=overshoot, max_iter=max_iter,
-                    pixels=pixels, pop_size=pop_size, delta=delta,
-                    max_iter_uni=max_iter_uni, max_iter_df=max_iter_df,
+                    classification_model,  # Use classification_model instead of adversarial_model
+                    input_batch,
+                    torch.tensor([0]).to(device),
+                    method,
+                    epsilon=epsilon,
+                    alpha=alpha,
+                    num_iter=num_iter,
+                    num_classes=num_classes,
+                    overshoot=overshoot,
+                    max_iter=max_iter,
+                    pixels=pixels,
+                    pop_size=pop_size,
+                    delta=delta,
+                    max_iter_uni=max_iter_uni,
+                    max_iter_df=max_iter_df,
                     stealth_mode=stealth_mode
                 )
                 adversarial_class = get_classification(adversarial_image, image_type)
@@ -287,11 +336,21 @@ async def generate_adversarial(
                 input_denorm = denormalize(input_batch)
                 from adversarial_methods import generate_adversarial_example
                 adversarial_image = generate_adversarial_example(
-                    adversarial_model, input_denorm, torch.tensor([0]).to(device), method,
-                    epsilon=epsilon, alpha=alpha, num_iter=num_iter,
-                    num_classes=num_classes, overshoot=overshoot, max_iter=max_iter,
-                    pixels=pixels, pop_size=pop_size, delta=delta,
-                    max_iter_uni=max_iter_uni, max_iter_df=max_iter_df,
+                    classification_model,  # Use classification_model instead of adversarial_model
+                    input_denorm,
+                    torch.tensor([0]).to(device),
+                    method,
+                    epsilon=epsilon,
+                    alpha=alpha,
+                    num_iter=num_iter,
+                    num_classes=num_classes,
+                    overshoot=overshoot,
+                    max_iter=max_iter,
+                    pixels=pixels,
+                    pop_size=pop_size,
+                    delta=delta,
+                    max_iter_uni=max_iter_uni,
+                    max_iter_df=max_iter_df,
                     stealth_mode=stealth_mode
                 )
                 adversarial_image = torch.clamp(adversarial_image, 0, 1)
@@ -299,6 +358,7 @@ async def generate_adversarial(
                 adversarial_class = get_classification(adv_normalized, image_type)
                 display_image = adversarial_image
 
+            # Convert to image and return
             to_pil = transforms.ToPILImage()
             adv_image_pil = to_pil(torch.clamp(display_image.squeeze(0).cpu(), 0, 1))
 
@@ -308,7 +368,7 @@ async def generate_adversarial(
 
             img_base64 = base64.b64encode(img_byte_arr).decode('utf-8')
 
-            logger.info(f"Classifications: original={original_class}, adversarial={adversarial_class}")
+            logger.info(f"Final classifications - Original: {original_class}, Adversarial: {adversarial_class}")
 
             return JSONResponse({
                 "original_prediction": f"{original_class} {image_type}",
@@ -322,7 +382,6 @@ async def generate_adversarial(
 
     except Exception as e:
         logger.exception(f"Error processing request: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
 
 
 if __name__ == "__main__":
