@@ -11,6 +11,9 @@ import torch.nn as nn
 from adversarial_methods import generate_adversarial_example
 import logging
 import os
+import time
+import asyncio
+from typing import Optional
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
@@ -25,6 +28,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Global dictionaries for progress tracking
+progress = {}
+task_start_times = {}
 
 # Device configuration
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -47,7 +54,7 @@ def create_classification_model():
 # Create and load models
 model_path = os.path.join(os.path.dirname(__file__), 'optimized_adversera_model.pth')
 classification_model = create_classification_model()
-classification_model.load_state_dict(torch.load(model_path))
+classification_model.load_state_dict(torch.load(model_path, map_location=torch.device('cpu')))
 classification_model.eval()
 classification_model = classification_model.to(device)
 
@@ -110,6 +117,7 @@ async def detect_image_type_endpoint(file: UploadFile = File(...)):
         logger.exception(f"Error detecting image type: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
 # Add denormalization transform
 denormalize = transforms.Compose([
     transforms.Normalize(mean=[0., 0., 0.],
@@ -123,6 +131,18 @@ normalize = transforms.Normalize(
     mean=[0.485, 0.456, 0.406],
     std=[0.229, 0.224, 0.225]
 )
+
+
+@app.post("/progress/{task_id}")
+async def get_progress(task_id: str):
+    """Endpoint to check the progress of an adversarial generation task"""
+    if task_id in progress:
+        elapsed_time = time.time() - task_start_times.get(task_id, time.time())
+        return JSONResponse({
+            "progress": progress[task_id],
+            "elapsed_time": round(elapsed_time, 2)
+        })
+    return JSONResponse({"progress": 0, "elapsed_time": 0})
 
 
 @app.post("/generate_adversarial")
@@ -143,79 +163,132 @@ async def generate_adversarial(
         max_iter_uni: int = Form(50),
         max_iter_df: int = Form(100)
 ):
+    task_id = str(time.time())  # Create unique task ID
+    progress[task_id] = 0
+    task_start_times[task_id] = time.time()
+
+    logger.info(f"Starting adversarial generation task {task_id}")
+    logger.info(f"Method: {method}, Image type: {image_type}, Stealth mode: {stealth_mode}")
+
     try:
+        # Update progress - Image loading
+        progress[task_id] = 5
         contents = await file.read()
+        logger.info("File read successfully")
+
         image = Image.open(io.BytesIO(contents))
+        logger.info("Image opened successfully")
 
         if image.mode != 'RGB':
             image = image.convert('RGB')
+            logger.info("Image converted to RGB")
 
-        if image_type == 'detect' or image_type == 'auto':
-            image_type = detect_image_type(image)
-            logger.info(f"Detected image type: {image_type}")
+        # Update progress - Preprocessing
+        progress[task_id] = 10
+
+        # Log all parameters
+        logger.info(f"Parameters: epsilon={epsilon}, alpha={alpha}, num_iter={num_iter}, "
+                    f"num_classes={num_classes}, overshoot={overshoot}, max_iter={max_iter}, "
+                    f"pixels={pixels}, pop_size={pop_size}, delta={delta}")
 
         # Preprocess the image
+        if image.mode != 'RGB':
+            image = image.convert('RGB')
+
         input_tensor = preprocess(image)
         input_batch = input_tensor.unsqueeze(0).to(device)
 
-        # Get original classification from our model
+        # Update progress - Detection
+        progress[task_id] = 20
+
+        # Get original classification
         original_class = get_classification(input_batch, image_type)
+        logger.info(f"Original classification: {original_class}")
 
-        if stealth_mode:
-            # Stealth mode: Use normalized perturbations
-            adversarial_image = generate_adversarial_example(
-                adversarial_model, input_batch, torch.tensor([0]).to(device), method,
-                epsilon=epsilon, alpha=alpha, num_iter=num_iter,
-                num_classes=num_classes, overshoot=overshoot, max_iter=max_iter,
-                pixels=pixels, pop_size=pop_size, delta=delta,
-                max_iter_uni=max_iter_uni, max_iter_df=max_iter_df,
-                stealth_mode=stealth_mode
-            )
-            # Get classification for adversarial image (still normalized)
-            adversarial_class = get_classification(adversarial_image, image_type)
-            # Denormalize only for display
-            display_image = denormalize(adversarial_image)
-        else:
-            # Non-stealth mode: Use denormalized perturbations for visible effect
-            input_denorm = denormalize(input_batch)
-            adversarial_image = generate_adversarial_example(
-                adversarial_model, input_denorm, torch.tensor([0]).to(device), method,
-                epsilon=epsilon, alpha=alpha, num_iter=num_iter,
-                num_classes=num_classes, overshoot=overshoot, max_iter=max_iter,
-                pixels=pixels, pop_size=pop_size, delta=delta,
-                max_iter_uni=max_iter_uni, max_iter_df=max_iter_df,
-                stealth_mode=stealth_mode
-            )
-            # Clamp the denormalized image
-            adversarial_image = torch.clamp(adversarial_image, 0, 1)
-            # Normalize for classification
-            adv_normalized = normalize(adversarial_image[0]).unsqueeze(0)
-            adversarial_class = get_classification(adv_normalized, image_type)
-            display_image = adversarial_image
+        # Update progress - Starting adversarial generation
+        progress[task_id] = 30
 
-        # Convert to PIL image
-        to_pil = transforms.ToPILImage()
-        adv_image_pil = to_pil(torch.clamp(display_image.squeeze(0).cpu(), 0, 1))
+        try:
+            if stealth_mode:
+                # Stealth mode: Use normalized perturbations
+                logger.info("Using stealth mode with normalized perturbations")
+                adversarial_image = generate_adversarial_example(
+                    adversarial_model, input_batch, torch.tensor([0]).to(device), method,
+                    epsilon=epsilon, alpha=alpha, num_iter=num_iter,
+                    num_classes=num_classes, overshoot=overshoot, max_iter=max_iter,
+                    pixels=pixels, pop_size=pop_size, delta=delta,
+                    max_iter_uni=max_iter_uni, max_iter_df=max_iter_df,
+                    stealth_mode=stealth_mode,
+                    progress_callback=lambda p: setattr(progress, task_id, 30 + int(p * 0.4))
+                )
+                # Get classification for adversarial image (still normalized)
+                adversarial_class = get_classification(adversarial_image, image_type)
+                # Denormalize only for display
+                display_image = denormalize(adversarial_image)
+            else:
+                # Non-stealth mode: Use denormalized perturbations for visible effect
+                logger.info("Using regular mode with denormalized perturbations")
+                input_denorm = denormalize(input_batch)
+                adversarial_image = generate_adversarial_example(
+                    adversarial_model, input_denorm, torch.tensor([0]).to(device), method,
+                    epsilon=epsilon, alpha=alpha, num_iter=num_iter,
+                    num_classes=num_classes, overshoot=overshoot, max_iter=max_iter,
+                    pixels=pixels, pop_size=pop_size, delta=delta,
+                    max_iter_uni=max_iter_uni, max_iter_df=max_iter_df,
+                    stealth_mode=stealth_mode,
+                    progress_callback=lambda p: setattr(progress, task_id, 30 + int(p * 0.4))
+                )
+                # Clamp the denormalized image
+                adversarial_image = torch.clamp(adversarial_image, 0, 1)
+                # Normalize for classification
+                adv_normalized = normalize(adversarial_image[0]).unsqueeze(0)
+                adversarial_class = get_classification(adv_normalized, image_type)
+                display_image = adversarial_image
 
-        # Save to bytes
-        img_byte_arr = io.BytesIO()
-        adv_image_pil.save(img_byte_arr, format='PNG')
-        img_byte_arr = img_byte_arr.getvalue()
+            # Update progress - Post-processing
+            progress[task_id] = 80
+            logger.info("Adversarial generation completed successfully")
 
-        # Encode to base64
-        img_base64 = base64.b64encode(img_byte_arr).decode('utf-8')
+            # Convert to PIL image
+            to_pil = transforms.ToPILImage()
+            adv_image_pil = to_pil(torch.clamp(display_image.squeeze(0).cpu(), 0, 1))
 
-        logger.info(f"Classifications: original={original_class}, adversarial={adversarial_class}")
+            # Save to bytes
+            img_byte_arr = io.BytesIO()
+            adv_image_pil.save(img_byte_arr, format='PNG')
+            img_byte_arr = img_byte_arr.getvalue()
 
-        return JSONResponse({
-            "original_prediction": f"{original_class} {image_type}",
-            "adversarial_prediction": f"{adversarial_class} {image_type}",
-            "adversarial_image": img_base64
-        })
+            # Encode to base64
+            img_base64 = base64.b64encode(img_byte_arr).decode('utf-8')
+
+            # Update progress - Complete
+            progress[task_id] = 100
+            logger.info(f"Task completed. Original: {original_class}, Adversarial: {adversarial_class}")
+
+            # Clean up
+            del progress[task_id]
+            del task_start_times[task_id]
+
+            return JSONResponse({
+                "task_id": task_id,
+                "original_prediction": f"{original_class} {image_type}",
+                "adversarial_prediction": f"{adversarial_class} {image_type}",
+                "adversarial_image": img_base64
+            })
+
+        except Exception as e:
+            logger.exception(f"Error during adversarial generation: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Generation error: {str(e)}")
 
     except Exception as e:
-        logger.exception(f"Error generating adversarial image: {str(e)}")
+        logger.exception(f"Error processing request: {str(e)}")
+        # Clean up in case of error
+        if task_id in progress:
+            del progress[task_id]
+        if task_id in task_start_times:
+            del task_start_times[task_id]
         raise HTTPException(status_code=500, detail=str(e))
+
 
 if __name__ == "__main__":
     import uvicorn

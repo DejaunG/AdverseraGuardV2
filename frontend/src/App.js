@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from 'react';
+import { detectImageType } from './apiService';
+import ClassificationDebug from './ClassificationDebug';
 import {
   Button,
   Card,
@@ -19,6 +21,7 @@ import {
   Chip,
   Box,
   Stack,
+  LinearProgress,
 } from '@mui/material';
 import MuiAlert from '@mui/material/Alert';
 import { createTheme, ThemeProvider } from '@mui/material/styles';
@@ -43,6 +46,7 @@ const theme = createTheme({
     },
   },
 });
+
 
 const methodDescriptions = {
     fgsm: "Fast Gradient Sign Method (FGSM) - A quick attack that modifies the image based on the gradient of the loss. Regular mode creates visible changes while stealth mode makes subtle perturbations. Fast to compute but may be less effective at fooling the model.",
@@ -150,11 +154,35 @@ const AdversaGuardUI = () => {
   const [imageType, setImageType] = useState('auto');
   const [isLoading, setIsLoading] = useState(false);
   const [isDetecting, setIsDetecting] = useState(false);
+  const [progress, setProgress] = useState(0);
 
   useEffect(() => {
     setVisible(true);
   }, []);
 
+  useEffect(() => {
+  let pollInterval;
+
+  return () => {
+    if (pollInterval) {
+      clearInterval(pollInterval);
+    }
+  };
+}, []);
+
+  const pollProgress = async (taskId) => {
+  try {
+    const response = await fetch(`http://localhost:8000/progress/${taskId}`);
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    const data = await response.json();
+    return data.progress;
+  } catch (error) {
+    console.error('Error polling progress:', error);
+    return null;
+  }
+};
   const ClassificationDisplay = ({ original, adversarial }) => {
     if (!original && !adversarial) return null;
 
@@ -261,102 +289,103 @@ const AdversaGuardUI = () => {
 
   const autoDetectImageType = async (file) => {
     setIsDetecting(true);
-    const formData = new FormData();
-    formData.append('file', file);
+    setError(null); // Clear any previous errors
 
     try {
-      const response = await fetch('http://127.0.0.1:8000/detect_image_type', {
-        method: 'POST',
-        body: formData,
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      const data = await response.json();
+      const data = await detectImageType(file);
       setImageType(data.image_type);
-    } catch (e) {
-      setError(`Failed to detect image type. Error: ${e.message}`);
+    } catch (error) {
+      console.error('Detection error:', error);
+      setError(error.message);
+      // Set a fallback image type if detection fails
+      setImageType('auto');
     } finally {
       setIsDetecting(false);
     }
   };
 
-  const generateAdversarial = async () => {
-    if (!selectedImage) {
-      setError("Please upload an image first.");
-      return;
+const generateAdversarial = async () => {
+  if (!selectedImage) {
+    setError("Please upload an image first.");
+    return;
+  }
+
+  setIsLoading(true);
+  setError(null);
+  const formData = new FormData();
+
+  try {
+    console.log("Starting adversarial generation...");
+    const imageFile = await fetch(selectedImage).then(r => r.blob());
+    formData.append('file', imageFile, 'image.jpg');
+    formData.append('method', method);
+    formData.append('stealth_mode', stealthMode.toString());
+    formData.append('image_type', imageType === 'auto' ? 'detect' : imageType);
+
+    // Method-specific parameter handling
+    switch (method) {
+      case 'fgsm':
+        formData.append('epsilon', params.epsilon.toString());
+        break;
+
+      case 'pgd':
+        formData.append('epsilon', params.epsilon.toString());
+        formData.append('alpha', params.alpha.toString());
+        formData.append('num_iter', params.num_iter.toString());
+        break;
+
+      case 'deepfool':
+        formData.append('num_classes', params.num_classes.toString());
+        formData.append('overshoot', params.overshoot.toString());
+        formData.append('max_iter', params.max_iter.toString());
+        formData.append('epsilon', '0.03');
+        break;
+
+      case 'one_pixel':
+        formData.append('pixels', params.pixels.toString());
+        formData.append('max_iter', params.max_iter.toString());
+        formData.append('pop_size', params.pop_size.toString());
+        formData.append('epsilon', '0.03');
+        break;
+
+      case 'universal':
+        formData.append('epsilon', params.epsilon.toString());
+        formData.append('delta', params.delta.toString());
+        formData.append('max_iter_uni', params.max_iter_uni.toString());
+        formData.append('num_classes', params.num_classes.toString());
+        break;
+
+      default:
+        throw new Error(`Unknown attack method: ${method}`);
     }
 
-    setIsLoading(true);
-    const formData = new FormData();
+    console.log("Sending request to backend...");
+    const response = await fetch('http://127.0.0.1:8000/generate_adversarial', {
+      method: 'POST',
+      body: formData,
+    });
 
-    try {
-      const imageFile = await fetch(selectedImage).then(r => r.blob());
-      formData.append('file', imageFile, 'image.jpg');
-      formData.append('method', method);
-      formData.append('stealth_mode', stealthMode.toString());
-      formData.append('image_type', imageType === 'auto' ? 'detect' : imageType);
-
-      // Method-specific parameter handling
-      switch (method) {
-        case 'fgsm':
-          formData.append('epsilon', params.epsilon.toString());
-          break;
-
-        case 'pgd':
-          formData.append('epsilon', params.epsilon.toString());
-          formData.append('alpha', params.alpha.toString());
-          formData.append('num_iter', params.num_iter.toString());
-          break;
-
-        case 'deepfool':
-          formData.append('num_classes', params.num_classes.toString());
-          formData.append('overshoot', params.overshoot.toString());
-          formData.append('max_iter', params.max_iter.toString());
-          formData.append('epsilon', '0.03');
-          break;
-
-        case 'one_pixel':
-          formData.append('pixels', params.pixels.toString());
-          formData.append('max_iter', params.max_iter.toString());
-          formData.append('pop_size', params.pop_size.toString());
-          formData.append('epsilon', '0.03');
-          break;
-
-        case 'universal':
-          formData.append('epsilon', params.epsilon.toString());
-          formData.append('delta', params.delta.toString());
-          formData.append('max_iter_uni', params.max_iter_uni.toString());
-          formData.append('num_classes', params.num_classes.toString());
-          break;
-
-        default:
-          throw new Error(`Unknown attack method: ${method}`);
-      }
-
-      const response = await fetch('http://127.0.0.1:8000/generate_adversarial', {
-        method: 'POST',
-        body: formData,
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
-      }
-
-      const data = await response.json();
-      setAdversarialImage(`data:image/png;base64,${data.adversarial_image}`);
-      setOriginalPrediction(data.original_prediction);
-      setAdversarialPrediction(data.adversarial_prediction);
-    } catch (e) {
-      console.error('Error details:', e);
-      setError(`Failed to generate adversarial image. Error: ${e.message}`);
-    } finally {
-      setIsLoading(false);
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
     }
-  };
+
+    const data = await response.json();
+    console.log('Adversarial generation response:', data);
+
+    // Set results directly
+    setAdversarialImage(`data:image/png;base64,${data.adversarial_image}`);
+    setOriginalPrediction(data.original_prediction);
+    setAdversarialPrediction(data.adversarial_prediction);
+
+  } catch (e) {
+    console.error('Error details:', e);
+    setError(`Failed to generate adversarial image. Error: ${e.message}`);
+  } finally {
+    setIsLoading(false);
+  }
+};
+
 
   const InfoTooltip = ({ title }) => (
     <Tooltip title={title}>
@@ -398,6 +427,15 @@ const AdversaGuardUI = () => {
             <ClassificationDisplay
               original={originalPrediction}
               adversarial={adversarialPrediction}
+            />
+
+            <ClassificationDebug
+              originalPrediction={originalPrediction}
+              adversarialPrediction={adversarialPrediction}
+              method={method}
+              stealthMode={stealthMode}
+              params={params}
+              isLoading={isLoading}
             />
 
             <Grid container spacing={4}>
@@ -529,6 +567,25 @@ const AdversaGuardUI = () => {
                         </Typography>
                       )}
                     </FormControl>
+
+                    {isLoading && (
+                      <Box sx={{ width: '100%', mb: 2 }}>
+                        <LinearProgress
+                          variant="determinate"
+                          value={progress}
+                          sx={{
+                            height: 10,
+                            borderRadius: 5,
+                            '& .MuiLinearProgress-bar': {
+                              borderRadius: 5,
+                            },
+                          }}
+                        />
+                        <Typography variant="body2" color="text.secondary" align="center" sx={{ mt: 1 }}>
+                          {progress}% Complete
+                        </Typography>
+                      </Box>
+                    )}
 
                     <FormControlLabel
                       control={
