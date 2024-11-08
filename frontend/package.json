@@ -42,5 +42,6 @@
   },
   "devDependencies": {
     "webpack": "5.96.1"
-  }
+  },
+  "proxy": "http://127.0.0.1:8000"
 }

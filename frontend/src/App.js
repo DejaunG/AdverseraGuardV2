@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { detectImageType } from './apiService';
-import ClassificationDebug from './ClassificationDebug';
+
 import {
   Button,
   Card,
@@ -23,6 +22,7 @@ import {
   Stack,
   LinearProgress,
 } from '@mui/material';
+
 import MuiAlert from '@mui/material/Alert';
 import { createTheme, ThemeProvider } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
@@ -30,6 +30,11 @@ import InfoIcon from '@mui/icons-material/Info';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import WarningIcon from '@mui/icons-material/Warning';
 import CompareArrowsIcon from '@mui/icons-material/CompareArrows';
+import DatasetLoader from './DatasetLoader';
+import ClassificationDebug from './ClassificationDebug';
+import { detectImageType } from './apiService';
+
+const API_BASE_URL = 'http://127.0.0.1:8000';
 
 const theme = createTheme({
   palette: {
@@ -47,32 +52,31 @@ const theme = createTheme({
   },
 });
 
-
 const methodDescriptions = {
-    fgsm: "Fast Gradient Sign Method (FGSM) - A quick attack that modifies the image based on the gradient of the loss. Regular mode creates visible changes while stealth mode makes subtle perturbations. Fast to compute but may be less effective at fooling the model.",
-    pgd: "Projected Gradient Descent (PGD) - An iterative attack that gradually modifies the image to fool the model. Regular mode produces visible alterations while stealth mode creates minimal visual changes. More effective than FGSM but takes longer to compute.",
-    deepfool: "DeepFool - A sophisticated attack that finds the minimal perturbation needed to cross the decision boundary. Creates highly targeted modifications that may be visually noticeable. Good for understanding model decision boundaries.",
-    one_pixel: "One Pixel Attack - Attempts to fool the model by modifying a small number of pixels. Shows how sensitive the model can be to tiny, localized changes. Progress bar shows attack status. More effective on simpler images.",
-    universal: "Universal Adversarial Perturbation - Creates a pattern that can potentially fool the model across multiple images. Takes longer to compute but can reveal systematic model vulnerabilities. Works best with consistent image types."
+  fgsm: "Fast Gradient Sign Method (FGSM) - A quick attack that modifies the image based on the gradient of the loss. Regular mode creates visible changes while stealth mode makes subtle perturbations. Fast to compute but may be less effective at fooling the model.",
+  pgd: "Projected Gradient Descent (PGD) - An iterative attack that gradually modifies the image to fool the model. Regular mode produces visible alterations while stealth mode creates minimal visual changes. More effective than FGSM but takes longer to compute.",
+  deepfool: "DeepFool - A sophisticated attack that finds the minimal perturbation needed to cross the decision boundary. Creates highly targeted modifications that may be visually noticeable. Good for understanding model decision boundaries.",
+  one_pixel: "One Pixel Attack - Attempts to fool the model by modifying a small number of pixels. Shows how sensitive the model can be to tiny, localized changes. Progress bar shows attack status. More effective on simpler images.",
+  universal: "Universal Adversarial Perturbation - Creates a pattern that can potentially fool the model across multiple images. Takes longer to compute but can reveal systematic model vulnerabilities. Works best with consistent image types."
 };
 
 const imageTypeDescriptions = {
-    auto: "Auto-detection uses our custom trained EfficientNet-B3 model to identify if the image is a fish eye or mushroom.",
-    fish_eye: "Fish eye images are classified as either fresh or non-fresh based on their visual characteristics.",
-    mushroom: "Mushroom images are classified as either poisonous or non-poisonous based on their features.",
+  auto: "Auto-detection uses our custom trained EfficientNet-B3 model to identify if the image is a fish eye or mushroom.",
+  fish_eye: "Fish eye images are classified as either fresh or non-fresh based on their visual characteristics.",
+  mushroom: "Mushroom images are classified as either poisonous or non-poisonous based on their features.",
 };
 
 const parameterDescriptions = {
-    epsilon: "Controls the magnitude of image modification. Higher values (like 0.1) create more noticeable changes but are more likely to succeed. Lower values (like 0.01) create subtler changes but might be less effective. In stealth mode, this value is automatically scaled for normalized image space.",
-    alpha: "Step size for iterative attacks like PGD. Smaller values make more precise changes but take longer. Like walking with smaller steps to reach a destination more accurately. Automatically scaled in stealth mode.",
-    num_iter: "Number of iterations for PGD attack. More iterations usually give better results but take longer. Start with 40-50 and increase if needed. Affects both regular and stealth modes equally.",
-    num_classes: "Number of different classes to consider when computing the attack. Higher numbers are more thorough but slower. Used primarily in DeepFool attack.",
-    overshoot: "Used in DeepFool to control how far past the decision boundary to push. Higher values make stronger attacks but more visible changes.",
-    max_iter: "Maximum number of iterations before stopping an attack. Increase this if the attack isn't successful enough.",
-    pixels: "Number of pixels to modify in One Pixel attack. More pixels = stronger attack but more visible changes.",
-    pop_size: "Population size for evolutionary algorithms in One Pixel attack. Larger numbers give better results but take longer.",
-    delta: "Target success rate for Universal attack (0-1). Higher values make stronger but more visible attacks.",
-    max_iter_uni: "Maximum iterations for Universal attack. More attempts = better results but longer runtime."
+  epsilon: "Controls the magnitude of image modification. Higher values (like 0.1) create more noticeable changes but are more likely to succeed. Lower values (like 0.01) create subtler changes but might be less effective. In stealth mode, this value is automatically scaled for normalized image space.",
+  alpha: "Step size for iterative attacks like PGD. Smaller values make more precise changes but take longer. Like walking with smaller steps to reach a destination more accurately. Automatically scaled in stealth mode.",
+  num_iter: "Number of iterations for PGD attack. More iterations usually give better results but take longer. Start with 40-50 and increase if needed. Affects both regular and stealth modes equally.",
+  num_classes: "Number of different classes to consider when computing the attack. Higher numbers are more thorough but slower. Used primarily in DeepFool attack.",
+  overshoot: "Used in DeepFool to control how far past the decision boundary to push. Higher values make stronger attacks but more visible changes.",
+  max_iter: "Maximum number of iterations before stopping an attack. Increase this if the attack isn't successful enough.",
+  pixels: "Number of pixels to modify in One Pixel attack. More pixels = stronger attack but more visible changes.",
+  pop_size: "Population size for evolutionary algorithms in One Pixel attack. Larger numbers give better results but take longer.",
+  delta: "Target success rate for Universal attack (0-1). Higher values make stronger but more visible attacks.",
+  max_iter_uni: "Maximum iterations for Universal attack. More attempts = better results but longer runtime."
 };
 
 const methodConfigs = {
@@ -155,34 +159,20 @@ const AdversaGuardUI = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [isDetecting, setIsDetecting] = useState(false);
   const [progress, setProgress] = useState(0);
+  const [pollInterval, setPollInterval] = useState(null);
 
   useEffect(() => {
     setVisible(true);
   }, []);
 
   useEffect(() => {
-  let pollInterval;
+    return () => {
+      if (pollInterval) {
+        clearInterval(pollInterval);
+      }
+    };
+  }, [pollInterval]);
 
-  return () => {
-    if (pollInterval) {
-      clearInterval(pollInterval);
-    }
-  };
-}, []);
-
-  const pollProgress = async (taskId) => {
-  try {
-    const response = await fetch(`http://localhost:8000/progress/${taskId}`);
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-    const data = await response.json();
-    return data.progress;
-  } catch (error) {
-    console.error('Error polling progress:', error);
-    return null;
-  }
-};
   const ClassificationDisplay = ({ original, adversarial }) => {
     if (!original && !adversarial) return null;
 
@@ -266,6 +256,7 @@ const AdversaGuardUI = () => {
       </Box>
     );
   };
+
   const handleMethodChange = (e) => {
     const newMethod = e.target.value;
     setMethod(newMethod);
@@ -287,9 +278,30 @@ const AdversaGuardUI = () => {
     setParams({ ...params, [name]: parseFloat(value) });
   };
 
+  const handleDatasetImageSelect = async (imageUrl) => {
+    try {
+      const response = await fetch(imageUrl);
+      if (!response.ok) {
+        throw new Error('Failed to fetch dataset image');
+      }
+      const imageBlob = await response.blob();
+      const imageObjectURL = URL.createObjectURL(imageBlob);
+      setSelectedImage(imageObjectURL);
+      if (imageType === 'auto') {
+        setIsDetecting(true);
+        await autoDetectImageType(imageBlob);
+      }
+    } catch (error) {
+      console.error('Error handling dataset image:', error);
+      setError('Failed to process dataset image');
+    } finally {
+      setIsDetecting(false);
+    }
+  };
+
   const autoDetectImageType = async (file) => {
     setIsDetecting(true);
-    setError(null); // Clear any previous errors
+    setError(null);
 
     try {
       const data = await detectImageType(file);
@@ -297,95 +309,107 @@ const AdversaGuardUI = () => {
     } catch (error) {
       console.error('Detection error:', error);
       setError(error.message);
-      // Set a fallback image type if detection fails
       setImageType('auto');
     } finally {
       setIsDetecting(false);
     }
   };
 
-const generateAdversarial = async () => {
-  if (!selectedImage) {
-    setError("Please upload an image first.");
-    return;
-  }
-
-  setIsLoading(true);
-  setError(null);
-  const formData = new FormData();
-
-  try {
-    console.log("Starting adversarial generation...");
-    const imageFile = await fetch(selectedImage).then(r => r.blob());
-    formData.append('file', imageFile, 'image.jpg');
-    formData.append('method', method);
-    formData.append('stealth_mode', stealthMode.toString());
-    formData.append('image_type', imageType === 'auto' ? 'detect' : imageType);
-
-    // Method-specific parameter handling
-    switch (method) {
-      case 'fgsm':
-        formData.append('epsilon', params.epsilon.toString());
-        break;
-
-      case 'pgd':
-        formData.append('epsilon', params.epsilon.toString());
-        formData.append('alpha', params.alpha.toString());
-        formData.append('num_iter', params.num_iter.toString());
-        break;
-
-      case 'deepfool':
-        formData.append('num_classes', params.num_classes.toString());
-        formData.append('overshoot', params.overshoot.toString());
-        formData.append('max_iter', params.max_iter.toString());
-        formData.append('epsilon', '0.03');
-        break;
-
-      case 'one_pixel':
-        formData.append('pixels', params.pixels.toString());
-        formData.append('max_iter', params.max_iter.toString());
-        formData.append('pop_size', params.pop_size.toString());
-        formData.append('epsilon', '0.03');
-        break;
-
-      case 'universal':
-        formData.append('epsilon', params.epsilon.toString());
-        formData.append('delta', params.delta.toString());
-        formData.append('max_iter_uni', params.max_iter_uni.toString());
-        formData.append('num_classes', params.num_classes.toString());
-        break;
-
-      default:
-        throw new Error(`Unknown attack method: ${method}`);
+  const generateAdversarial = async () => {
+    if (!selectedImage) {
+      setError("Please upload an image first.");
+      return;
     }
 
-    console.log("Sending request to backend...");
-    const response = await fetch('http://127.0.0.1:8000/generate_adversarial', {
-      method: 'POST',
-      body: formData,
-    });
+    setIsLoading(true);
+    setError(null);
+    const formData = new FormData();
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
+    try {
+      const imageResponse = await fetch(selectedImage, {
+        mode: 'cors',
+        credentials: 'omit'
+      });
+      if (!imageResponse.ok) {
+        throw new Error('Failed to fetch image');
+      }
+      const imageBlob = await imageResponse.blob();
+
+      formData.append('file', imageBlob, 'image.jpg');
+      formData.append('method', method);
+      formData.append('stealth_mode', stealthMode.toString());
+      formData.append('image_type', imageType === 'auto' ? 'detect' : imageType);
+
+      switch (method) {
+        case 'fgsm':
+          formData.append('epsilon', params.epsilon.toString());
+          break;
+        case 'pgd':
+          formData.append('epsilon', params.epsilon.toString());
+          formData.append('alpha', params.alpha.toString());
+          formData.append('num_iter', params.num_iter.toString());
+          break;
+        case 'deepfool':
+          formData.append('num_classes', params.num_classes.toString());
+          formData.append('overshoot', params.overshoot.toString());
+          formData.append('max_iter', params.max_iter.toString());
+          break;
+        case 'one_pixel':
+          formData.append('pixels', params.pixels.toString());
+          formData.append('max_iter', params.max_iter.toString());
+          formData.append('pop_size', params.pop_size.toString());
+          break;
+        case 'universal':
+          formData.append('epsilon', params.epsilon.toString());
+          formData.append('delta', params.delta.toString());
+          formData.append('max_iter_uni', params.max_iter_uni.toString());
+          formData.append('num_classes', params.num_classes.toString());
+          break;
+        default:
+          throw new Error(`Unknown attack method: ${method}`);
+      }
+
+      console.log("Sending request to backend...");
+      const response = await fetch(`${API_BASE_URL}/generate_adversarial`, {
+        method: 'POST',
+        body: formData,
+        mode: 'cors',
+        credentials: 'omit'
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
+      }
+
+      const data = await response.json();
+
+      if (data.task_id) {
+        const interval = setInterval(async () => {
+          const progressResponse = await fetch(`${API_BASE_URL}/progress/${data.task_id}`);
+          const progressData = await progressResponse.json();
+          setProgress(progressData.progress);
+
+          if (progressData.progress >= 100) {
+            clearInterval(interval);
+            setPollInterval(null);
+          }
+        }, 1000);
+        setPollInterval(interval);
+      }
+
+      console.log('Adversarial generation response:', data);
+      setAdversarialImage(`data:image/png;base64,${data.adversarial_image}`);
+      setOriginalPrediction(data.original_prediction);
+      setAdversarialPrediction(data.adversarial_prediction);
+    } catch (error) {
+      console.error('Error generating adversarial image:', error);
+      setError(error.message);
+    } finally {
+      setIsLoading(false);
+      setProgress(0);
     }
-
-    const data = await response.json();
-    console.log('Adversarial generation response:', data);
-
-    // Set results directly
-    setAdversarialImage(`data:image/png;base64,${data.adversarial_image}`);
-    setOriginalPrediction(data.original_prediction);
-    setAdversarialPrediction(data.adversarial_prediction);
-
-  } catch (e) {
-    console.error('Error details:', e);
-    setError(`Failed to generate adversarial image. Error: ${e.message}`);
-  } finally {
-    setIsLoading(false);
-  }
-};
-
+  };
 
   const InfoTooltip = ({ title }) => (
     <Tooltip title={title}>
@@ -465,6 +489,8 @@ const generateAdversarial = async () => {
                         }}
                       />
                     )}
+                    <DatasetLoader onImageSelect={handleDatasetImageSelect} />
+
                     <Button
                       variant="contained"
                       component="label"
@@ -511,7 +537,7 @@ const generateAdversarial = async () => {
                       />
                     )}
 
-      <FormControl fullWidth sx={{ mb: 2 }}>
+                    <FormControl fullWidth sx={{ mb: 2 }}>
                       <InputLabel>Attack Method</InputLabel>
                       <Select
                         value={method}
@@ -654,7 +680,7 @@ const generateAdversarial = async () => {
             </Grid>
           </div>
         </Container>
-         <Snackbar
+        <Snackbar
           open={!!error}
           autoHideDuration={6000}
           onClose={() => setError(null)}
