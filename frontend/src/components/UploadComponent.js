@@ -2,9 +2,14 @@ import React from 'react';
 import { Box, Button } from '@mui/material';
 import { CloudUpload } from '@mui/icons-material';
 
-function UploadComponent({ onImageUpload }) {
+function UploadComponent({ onFileUpload, onImageUpload }) {
   const handleUploadClick = (event) => {
-    onImageUpload(event.target.files[0]);
+    const file = event.target.files[0];
+    if (file) {
+      // Support both callback naming conventions
+      if (onFileUpload) onFileUpload(file);
+      if (onImageUpload) onImageUpload(file);
+    }
   };
 
   return (

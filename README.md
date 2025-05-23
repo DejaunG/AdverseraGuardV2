@@ -1,150 +1,114 @@
-# 🛡️ AdversaGuard: Adversarial Attack Testing Platform
+# AdverseraGuard V2
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Python](https://img.shields.io/badge/Python-3.8%2B-blue)](https://www.python.org/downloads/)
-[![React](https://img.shields.io/badge/React-18.0%2B-blue)](https://reactjs.org/)
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.95%2B-green)](https://fastapi.tiangolo.com/)
+A platform for testing and evaluating adversarial attacks on deep learning models, with a focus on image classification.
 
-AdversaGuard is a powerful web-based platform for testing and visualizing adversarial attacks on deep learning models. It provides an intuitive interface for generating and analyzing adversarial examples using various attack methods.
+## Features
 
-## 🌟 Features
+- Test various adversarial attack methods (FGSM, PGD, DeepFool, One Pixel Attack, UAP)
+- Visualize original and adversarial images
+- Support for different model training approaches (centralized and federated learning)
+- Stealth mode for more subtle adversarial perturbations
+- Support for different image types (mushroom classification, fish freshness)
 
-- 🎯 Multiple adversarial attack methods:
-  - Fast Gradient Sign Method (FGSM)
-  - Projected Gradient Descent (PGD)
-  - DeepFool
-  - One Pixel Attack
-  - Universal Adversarial Perturbations
+## Project Structure
 
-- 🔧 Advanced configuration options for each attack method
-- 📊 Real-time visualization of original and adversarial images
-- 🤖 Automatic image type detection
-- 🎨 Modern, responsive UI built with Material-UI
-- 🚀 Fast and efficient backend powered by FastAPI
+```
+├── backend/                      # Backend server and ML functionality
+│   ├── adversarial_methods.py    # Implementation of attack algorithms
+│   ├── main.py                   # FastAPI server
+│   ├── train.py                  # Centralized model training
+│   ├── federated_server.py       # Federated learning server
+│   ├── federated_client.py       # Federated learning client
+│   ├── federated_train.py        # Dataset splitting for federated learning
+│   ├── federated_main.py         # Main script to run federated learning
+│   ├── dataset/                  # Training and validation data
+│   └── requirements.txt          # Python dependencies
+├── frontend/                     # React web interface
+│   ├── public/                   # Static files
+│   ├── src/                      # React components
+│   └── package.json              # Frontend dependencies
+└── README.md                     # Project documentation
+```
 
-## 🛠️ Installation
+## Getting Started
 
 ### Prerequisites
 
-- Python 3.8 or higher
-- Node.js 14.0 or higher
-- npm 6.0 or higher
+- Python 3.8+
+- Node.js 14+
+- PyTorch and TorchVision
+- Flower (for federated learning)
 
-### Backend Setup
+### Installation
+
+1. Clone the repository:
 
 ```bash
-# Clone the repository
-git clone https://github.com/yourusername/adversaguard.git
-cd adversaguard
+git clone https://github.com/yourusername/AdverseraGuardV2.git
+cd AdverseraGuardV2
+```
 
-# Create and activate virtual environment
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+2. Install backend dependencies:
 
-# Install Python dependencies
+```bash
 cd backend
-pip install -r requirements.txt
+pip install -r updated_requirements.txt
 ```
 
-### Frontend Setup
+3. Install frontend dependencies:
 
 ```bash
-# Navigate to frontend directory
-cd frontend
-
-# Install Node dependencies
+cd ../frontend
 npm install
-
-# Create production build
-npm run build
 ```
 
-## 🚀 Usage
+### Running the Application
 
 1. Start the backend server:
+
 ```bash
 cd backend
 python main.py
 ```
 
 2. Start the frontend development server:
+
 ```bash
 cd frontend
 npm start
 ```
 
-3. Open your browser and navigate to `http://localhost:3000`
+3. Access the web interface at http://localhost:3000
 
-## 💡 How It Works
+## Federated Learning Support
 
-1. Upload an image (supported types: fish eye images or mushroom images)
-2. Select an attack method and configure parameters
-3. Generate adversarial examples
-4. View the results and classifications
+AdverseraGuardV2 now supports federated learning for privacy-preserving model training.
 
-## 🔧 Configuration
+### Running Federated Learning
 
-### Attack Parameters
+1. Start federated learning process:
 
-- `epsilon`: Perturbation magnitude (default: 0.03)
-- `alpha`: Step size for iterative attacks (default: 0.01)
-- `num_iter`: Number of iterations (default: 40)
-- And more advanced parameters...
-
-### Supported Image Types
-
-- 🐟 Fish Eye Images (Classification: Fresh/Non-Fresh)
-- 🍄 Mushroom Images (Classification: Poisonous/Non-Poisonous)
-
-## 📚 API Documentation
-
-The backend API is documented using FastAPI's automatic documentation. After starting the backend server, visit:
-
-- Swagger UI: `http://localhost:8000/docs`
-- ReDoc: `http://localhost:8000/redoc`
-
-## 🧪 Testing
-
-### Backend Tests
 ```bash
 cd backend
-pytest
+python federated_main.py --num_clients 3 --num_rounds 5 --compare
 ```
 
-### Frontend Tests
+This will:
+- Split your dataset into client partitions
+- Start the federated learning server
+- Launch multiple client processes
+- Train a federated model
+- Compare the federated model with the centralized one
+
+2. Test an individual image against the federated model:
+
 ```bash
-cd frontend
-npm test
+python federated_adversarial_test.py \
+    --federated_model federated_adversera_model.pth \
+    --image dataset/val/poisonous/example.jpg \
+    --attack fgsm
 ```
 
-## 📝 License
+## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE.md) file for details.
-
-## 🤝 Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
-
-## 🌟 Acknowledgments
-
-- FastAPI for the amazing backend framework
-- React and Material-UI for the frontend components
-- PyTorch for the deep learning capabilities
-
-## 📞 Contact
-
-Website - [FutureForge.xyz](https://www.futureforge.xyz/)
-
-Project Link: [https://github.com/DejaunG/AdverseraGuardV2](https://github.com/DejaunG/AdverseraGuardV2)
-
----
-
-<p align="center">
-  Made with ❤️ by [Dejaun Gayle]
-</p>
+This project is licensed under the MIT License - see the LICENSE.md file for details.
