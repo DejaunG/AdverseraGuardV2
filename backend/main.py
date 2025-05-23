@@ -183,7 +183,7 @@ async def generate_adversarial(
         if image.mode != 'RGB':
             image = image.convert('RGB')
             logger.info(f"Converted image to RGB mode")
-        
+
         # Preprocess the image
         input_tensor = preprocess(image)
         input_batch = input_tensor.unsqueeze(0).to(device)  # Ensure tensor is on the correct device
@@ -197,16 +197,16 @@ async def generate_adversarial(
             except Exception as e:
                 logger.exception(f"Error during model inference: {str(e)}")
                 raise HTTPException(status_code=500, detail=f"Model inference error: {str(e)}")
-                
+
         original_pred = output.argmax().item()
         logger.info(f"Original prediction index: {original_pred}")
 
         try:
             logger.info(f"Generating adversarial example with method: {method}, epsilon: {epsilon}")
-            
+
             # Ensure label tensor is on the same device as the model
             label_tensor = torch.tensor([original_pred], device=device)
-            
+
             adversarial_image = generate_adversarial_example(
                 model, input_batch, label_tensor, method,
                 epsilon=epsilon, alpha=alpha, num_iter=num_iter,
@@ -215,7 +215,7 @@ async def generate_adversarial(
                 max_iter_uni=max_iter_uni, max_iter_df=max_iter_df,
                 stealth_mode=stealth_mode
             )
-            
+
             logger.info(f"Adversarial image generated successfully with shape: {adversarial_image.shape}")
         except Exception as e:
             logger.exception(f"Error generating adversarial example: {str(e)}")
@@ -402,6 +402,7 @@ async def get_model_info():
 
 @app.post("/select_model")
 async def select_model(model_id: str = Form(...)):
+
     """Select a model to use"""
     try:
         # Check if model exists
@@ -433,17 +434,7 @@ async def select_model(model_id: str = Form(...)):
                 loaded_model = resnet50(weights=None)
                 loaded_model.load_state_dict(torch.load(model_path, map_location=device))
             
-            # Update global model
-            global model
-            model = loaded_model.to(device)
-            model.eval()
-        else:
-            # Load ImageNet model
-            logger.info("Loading default ImageNet model")
-            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-            global model
-            model = resnet50(weights=ResNet50_Weights.IMAGENET1K_V1).to(device)
-            model.eval()
+
         
         # Set active model in environment
         os.environ["ACTIVE_MODEL"] = model_id
